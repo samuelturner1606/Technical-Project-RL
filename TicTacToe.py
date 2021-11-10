@@ -1,58 +1,61 @@
+from gym import Env
+from gym.spaces import Discrete, Box
 import numpy as np
 import random
 
-class Game:
-    
+class Game(Env):
     def __init__(self):
-        self.playing = True
-        self.player = 'x'
-        self.state = np.zeros([3,3])
+        self.action_space = Discrete(9) # [0 1 2 3 4 5 6 7 8]
+        self.observation_space = Discrete(9)
+        self.reset()
+
+    def step(self, action):
+        self.state[action] = self.player # applies action
+        self.isGameOver() # calculates reward
+        info = {} # placeholder
+        self.player *= -1 # changes player
+        return self.state, self.reward, self.done, info
+
+    def reset(self):
+        self.state = np.zeros(9, dtype=int) # [0 0 0 0 0 0 0 0 0]
+        self.player = 1 # 'player X' = 1, 'player O' = -1
+        self.done = False
         self.reward = None
-    
-    def action(self, i, j):
-        if self.playing:
-            if self.player == 'x':
-                marker = 1
-                self.player = 'o'
-            else:
-                marker = -1
-                self.player = 'x'
-            self.state[i][j] = marker
-            self.isGameOver()
-        return
-    
-    def isGameOver(self):
-        sums = []
-        for i in range(3):
-            sums.append( sum(self.state[i,:]) )  # rows
-        for j in range(3):
-            sums.append( sum(self.state[:,j]) ) # columns
-        sums.append( np.trace(self.state) ) # left diagonal  
-        sums.append( np.trace(np.fliplr(self.state)) ) # right diagonal  
-        if 3 in sums: # x wins
-            self.playing = False
-            self.reward = 1
-        elif -3 in sums: # o wins
-            self.playing = False
-            self.reward = -1
-        elif 0 not in self.state: # draw
-            self.playing = False
-            self.reward = 0
+        return self.state
+
+    def render(self):
+        print('\nstate:\n'+str(self.state.reshape([3,3]))+'\nreward: '+str(self.reward))
         return
     
     def randomAction(self):
-        if self.playing and 0 in self.state:
-            empty_spots = []
-            for i in range(3):
-                for j in range(3):
-                    if self.state[i][j] == 0:
-                        empty_spots.append((i,j))    
-            x, y = random.choice(empty_spots)
-            self.action(x, y)
+        emptySpots = np.nonzero(self.state == 0)[0]
+        randomAction = random.choice(emptySpots)
+        self.step(randomAction)
         return
 
-games = [Game() for i in range(20)]
-for game in games:
-    while game.playing:
-        game.randomAction()
-    print("\n state: \n"+str(game.state)+", reward: "+str(game.reward))
+    def isGameOver(self):
+        state = self.state.reshape([3,3])
+        S = []
+        for i in range(3):
+            S.append( sum(state[i,:]) )  # rows
+        for j in range(3):
+            S.append( sum(state[:,j]) ) # columns
+        S.append( np.trace(state) ) # left diagonal  
+        S.append( np.trace(np.fliplr(state)) ) # right diagonal  
+        if 3 in S: # X wins
+            self.done = True
+            self.reward = 1
+        elif -3 in S: # O wins
+            self.done = True
+            self.reward = -1
+        elif 0 not in self.state: # draw
+            self.done = True
+            self.reward = 0
+        return 
+
+env = Game()
+for episode in range(10):
+    while not env.done:
+        env.randomAction()
+    env.render()
+    env.reset()
