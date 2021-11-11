@@ -1,37 +1,32 @@
-from gym import Env
-from gym.spaces import Discrete, Box
+from gym import Env, spaces
 import numpy as np
 import random
 
 class Game(Env):
     def __init__(self):
-        self.action_space = Discrete(9) # [0 1 2 3 4 5 6 7 8]
-        self.observation_space = Discrete(9)
-        self.reset()
+        self.observation_space = spaces.Discrete(3**9)
+        self.action_space = spaces.MultiDiscrete([2, 9])
 
     def step(self, action):
         self.state[action] = self.player # applies action
-        self.isGameOver() # calculates reward
+        reward, done = self.isGameOver()
         info = {} # placeholder
         self.player *= -1 # changes player
-        return self.state, self.reward, self.done, info
+        return self.state, reward, done, info
 
     def reset(self):
         self.state = np.zeros(9, dtype=int) # [0 0 0 0 0 0 0 0 0]
         self.player = 1 # 'player X' = 1, 'player O' = -1
-        self.done = False
-        self.reward = None
         return self.state
 
-    def render(self):
-        print('\nstate:\n'+str(self.state.reshape([3,3]))+'\nreward: '+str(self.reward))
+    def render(self, reward):
+        print('\nstate:\n'+str(self.state.reshape([3,3]))+'\nreward: '+str(reward))
         return
     
-    def randomAction(self):
+    def getRandomAction(self):
         emptySpots = np.nonzero(self.state == 0)[0]
         randomAction = random.choice(emptySpots)
-        self.step(randomAction)
-        return
+        return randomAction
 
     def isGameOver(self):
         state = self.state.reshape([3,3])
@@ -43,19 +38,26 @@ class Game(Env):
         S.append( np.trace(state) ) # left diagonal  
         S.append( np.trace(np.fliplr(state)) ) # right diagonal  
         if 3 in S: # X wins
-            self.done = True
-            self.reward = 1
+            done = True
+            reward = 1
         elif -3 in S: # O wins
-            self.done = True
-            self.reward = -1
+            done = True
+            reward = -1
         elif 0 not in self.state: # draw
-            self.done = True
-            self.reward = 0
-        return 
+            done = True
+            reward = 0
+        else: # not ended
+            done = False
+            reward = None
+        return reward, done
 
-env = Game()
-for episode in range(10):
-    while not env.done:
-        env.randomAction()
-    env.render()
-    env.reset()
+if __name__ == "__main__":
+    env = Game()
+    for episode in range(10):
+        obs = env.reset()
+        while True:
+            action = env.getRandomAction()
+            obs, reward, done, info = env.step(action)
+            if done:
+                env.render(reward)
+                break
