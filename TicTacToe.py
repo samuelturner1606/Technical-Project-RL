@@ -3,7 +3,7 @@ import random
 
 class TicTacToe:
     def __init__(self):
-        self.epsilon = 0.1  # exploration rate
+        self.epsilon = 0.5  # exploration rate
         self.alpha = 0.9  # learning rate
         self.gamma = 1  # disount factor
         self.Q = {(0,0,0,0,0,0,0,0,0): {0:0,1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0}} # { states : {actions : values }
@@ -21,7 +21,6 @@ class TicTacToe:
 
     def render(self, state, reward):
         print('\nState:\n'+str(np.reshape(state,[3,3]))+'\nreward: '+str(reward))
-        print('\nQ table: '+str(self.Q))
         return
     
     def is_game_over(self, state):
@@ -85,9 +84,10 @@ class TicTacToe:
 
 if __name__ == "__main__":
     env = TicTacToe()
-    for episode in range(20):
+    for episode in range(1000):
         old_state = env.reset()
-        for action in range(9):
+        while True:
+            action = env.greedy_policy(old_state)
             state, reward, done, info = env.step(action)
             if tuple(state) not in env.Q and not done:
                     env.Q[tuple(state)] = dict.fromkeys(env.possible_actions(state), 0)
@@ -95,5 +95,7 @@ if __name__ == "__main__":
             old_state = np.copy(state)
             env.player *= -1 # change player
             if done:
+                env.epsilon*0.9
                 env.render(state, reward)
                 break
+print('\nQ table: '+str(env.Q))
