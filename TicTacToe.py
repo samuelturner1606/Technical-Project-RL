@@ -99,7 +99,8 @@ class TicTacToe:
                 old_state = np.copy(state)
                 self.player *= -1 # change player
                 if done:
-                    self.epsilon = round(self.epsilon*0.99, 5)
+                    if self.epsilon > 0.1:
+                        self.epsilon = round(self.epsilon*0.999,2)
                     # self.render(state, reward)
                     break
         return
