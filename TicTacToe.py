@@ -34,14 +34,24 @@ class TicTacToe:
         plt.savefig('plot1.png')
 
         fig2, ax2 = plt.subplots()
-        ax2 = sns.regplot(x='Training episodes', y='Win rate', data=df, color="green", label='Win rate', scatter_kws={"s": 10}, order=2)
-        ax2 = sns.regplot(x='Training episodes', y='Draw rate', data=df, color="blue", label='Draw rate', scatter_kws={"s": 10}, order=2)
-        ax2 = sns.regplot(x='Training episodes', y='Loss rate', data=df, color="red", label='Loss rate', scatter_kws={"s": 10}, order=2)
-        ax2.set_title('Performance against random opponent')
+        ax2 = sns.regplot(x='Training episodes', y='Win1', data=df, color="green", label='Win rate', scatter_kws={"s": 10}, order=2)
+        ax2 = sns.regplot(x='Training episodes', y='Draw1', data=df, color="blue", label='Draw rate', scatter_kws={"s": 10}, order=2)
+        ax2 = sns.regplot(x='Training episodes', y='Loss1', data=df, color="red", label='Loss rate', scatter_kws={"s": 10}, order=2)
+        ax2.set_title('Q-agent Crosses vs Random Naughts')
         ax2.set_ylabel('Percentage')
         ax2.set_ylim([0,1])
         ax2.legend()
         plt.savefig('plot2.png')
+
+        fig3, ax3 = plt.subplots()
+        ax3 = sns.regplot(x='Training episodes', y='Win2', data=df, color="green", label='Win rate', scatter_kws={"s": 10}, order=2)
+        ax3 = sns.regplot(x='Training episodes', y='Draw2', data=df, color="blue", label='Draw rate', scatter_kws={"s": 10}, order=2)
+        ax3 = sns.regplot(x='Training episodes', y='Loss2', data=df, color="red", label='Loss rate', scatter_kws={"s": 10}, order=2)
+        ax3.set_title('Random Crosses vs Q-agent Naughts')
+        ax3.set_ylabel('Percentage')
+        ax3.set_ylim([0,1])
+        ax3.legend()
+        plt.savefig('plot3.png')
         return
     
     def is_game_over(self, state):
@@ -81,11 +91,11 @@ class TicTacToe:
         best_action, best_q = None, None
         for action in self.possible_actions(state):
             q = self.Q[tuple(state)][action]
-            if player == 1: # maximise q of player 1
+            if player == 1: # maximise player 1's q
                 if best_q is None or best_q < q:
                     best_q = q
                     best_action = action
-            else: # minimise q of player 1
+            else: # minimise player 1's q
                 if best_q is None or best_q > q:
                     best_q = q
                     best_action = action
@@ -110,7 +120,7 @@ class TicTacToe:
         if done:
             best_next_q = 0
         else:
-            best_next_action, best_next_q = self.best_action(state, -1*self.player) # 2-player game so opponents best action!
+            best_next_action, best_next_q = self.best_action(state, self.player*-1) # 2-player game so opponents best action!
         # Bellman optimality equation
         new_q = q + self.alpha * (reward + self.gamma*best_next_q - q)
         self.Q[tuple(old_state)][action] = round(new_q, 2)
@@ -132,13 +142,13 @@ class TicTacToe:
                     break
         return
     
-    def test(self,episodes):
+    def test(self,episodes,player):
         results = []
         for episode in range(episodes):
             state = self.reset()
             while True:
-                if self.player == 1:
-                    action, best_q = self.best_action(state, 1)
+                if self.player == player:
+                    action, best_q = self.best_action(state, player)
                 else:
                     action = random.choice(self.possible_actions(state))
                 state, reward, done, info = self.step(action)
@@ -162,18 +172,24 @@ class TicTacToe:
 
 if __name__ == "__main__":
     env = TicTacToe()
-    avg_q_values, win_rates, draw_rates, loss_rates = [], [], [], []
+    avg_q_values, win_rates1, draw_rates1, loss_rates1, win_rates2, draw_rates2, loss_rates2 = [], [], [], [], [], [], []
     train_n, test_n, cycles = 200, 1000, 100
 
     for cycle in range(cycles):
         env.train(train_n)
         avg_q_values.append(env.average_q())
-        win_rate, draw_rate, loss_rate = env.test(test_n)
-        win_rates.append(win_rate)
-        draw_rates.append(draw_rate)
-        loss_rates.append(loss_rate)
+        # Q-agent Crosses vs Random Naughts
+        win1, draw1, loss1 = env.test(test_n, 1)
+        win_rates1.append(win1)
+        draw_rates1.append(draw1)
+        loss_rates1.append(loss1)
+        # Random Crosses vs Q-agent Naughts
+        win2, draw2, loss2 = env.test(test_n, -1)
+        win_rates2.append(win2)
+        draw_rates2.append(draw2)
+        loss_rates2.append(loss2)
     
     x = np.arange(train_n, train_n*cycles+1, train_n)
-    data = {'Training episodes':x, 'Win rate':win_rates, 'Loss rate':loss_rates, 'Draw rate':draw_rates, 'Average Q(s,a) value':avg_q_values}
+    data = {'Training episodes':x, 'Average Q(s,a) value':avg_q_values, 'Win1':win_rates1, 'Loss1':loss_rates1, 'Draw1':draw_rates1, 'Win2':win_rates2, 'Loss2':loss_rates2, 'Draw2':draw_rates2}
     df = pd.DataFrame(data)
     env.render(df)
