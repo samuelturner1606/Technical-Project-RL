@@ -6,7 +6,7 @@ import pandas as pd
 
 class TicTacToe:
     def __init__(self):
-        self.epsilon = 1  # exploration rate
+        self.epsilon = 0.1  # exploration rate
         self.alpha = 0.2  # learning rate
         self.gamma = 0.9  # disount factor
         self.Q = {} # { states : {actions : values }
@@ -123,7 +123,7 @@ class TicTacToe:
             best_next_action, best_next_q = self.best_action(state, self.player*-1) # 2-player game so opponents best action!
         # Bellman optimality equation
         new_q = q + self.alpha * (reward + self.gamma*best_next_q - q)
-        self.Q[tuple(old_state)][action] = round(new_q, 2)
+        self.Q[tuple(old_state)][action] = round(new_q, 3)
         return
     
     def train(self,episodes):
@@ -137,8 +137,6 @@ class TicTacToe:
                 old_state = np.copy(state)
                 self.player *= -1 # change player
                 if done:
-                    if self.epsilon > 0.1:
-                        self.epsilon = round(self.epsilon*0.999,5)
                     break
         return
     
