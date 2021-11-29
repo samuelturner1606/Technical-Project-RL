@@ -52,6 +52,16 @@ class TicTacToe:
         ax3.set_ylim([0,1])
         ax3.legend(title='Random agent:')
         plt.savefig('Random vs Q.png')
+
+        fig4, ax4 = plt.subplots()
+        ax4 = sns.regplot(x='Training episodes', y='Win', data=df, color="green", label='Win rate', scatter_kws={"s": 10}, order=2)
+        ax4 = sns.regplot(x='Training episodes', y='Draw', data=df, color="blue", label='Draw rate', scatter_kws={"s": 10}, order=2)
+        ax4 = sns.regplot(x='Training episodes', y='Loss', data=df, color="red", label='Loss rate', scatter_kws={"s": 10}, order=2)
+        ax4.set_title('Q-agent vs itself')
+        ax4.set_ylabel('Percentage')
+        ax4.set_ylim([0,1])
+        ax4.legend(title='Player One:')
+        plt.savefig('Q vs Q.png')
         return
     
     def is_game_over(self, state):
@@ -127,6 +137,7 @@ class TicTacToe:
         return
     
     def train(self,episodes):
+        results = []
         for episode in range(episodes):
             old_state = self.reset()
             while True:
@@ -137,8 +148,12 @@ class TicTacToe:
                 old_state = np.copy(state)
                 self.player *= -1 # change player
                 if done:
+                    results.append(reward)
                     break
-        return
+        win_rate = len([x for x in results if x == 1])/episodes
+        draw_rate = len([x for x in results if x == 0])/episodes
+        loss_rate = len([x for x in results if x == -1])/episodes
+        return win_rate, draw_rate, loss_rate
     
     def test(self,episodes,player):
         results = []
@@ -170,11 +185,15 @@ class TicTacToe:
 
 if __name__ == "__main__":
     env = TicTacToe()
-    avg_q_values, win_rates1, draw_rates1, loss_rates1, win_rates2, draw_rates2, loss_rates2 = [], [], [], [], [], [], []
+    avg_q_values, win_rates, draw_rates, loss_rates, win_rates1, draw_rates1, loss_rates1, win_rates2, draw_rates2, loss_rates2 = [], [], [], [], [], [], [], [], [], []
     train_n, test_n, cycles = 200, 1000, 100
 
     for cycle in range(cycles):
-        env.train(train_n)
+        # Q-agent vs itself
+        win, draw, loss = env.train(train_n)
+        win_rates.append(win)
+        draw_rates.append(draw)
+        loss_rates.append(loss)
         avg_q_values.append(env.average_q())
         # Q-agent Crosses vs Random Naughts
         win1, draw1, loss1 = env.test(test_n, 1)
@@ -188,6 +207,6 @@ if __name__ == "__main__":
         loss_rates2.append(loss2)
     
     x = np.arange(train_n, train_n*cycles+1, train_n)
-    data = {'Training episodes':x, 'Average Q(s,a) value':avg_q_values, 'Win1':win_rates1, 'Loss1':loss_rates1, 'Draw1':draw_rates1, 'Win2':win_rates2, 'Loss2':loss_rates2, 'Draw2':draw_rates2}
+    data = {'Training episodes':x, 'Average Q(s,a) value':avg_q_values, 'Win':win_rates, 'Loss':loss_rates, 'Draw':draw_rates, 'Win1':win_rates1, 'Loss1':loss_rates1, 'Draw1':draw_rates1, 'Win2':win_rates2, 'Loss2':loss_rates2, 'Draw2':draw_rates2}
     df = pd.DataFrame(data)
     env.render(df)
