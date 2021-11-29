@@ -30,28 +30,28 @@ class TicTacToe:
 
         fig1, ax1 = plt.subplots()
         ax1 = sns.regplot(x='Training episodes', y='Average Q(s,a) value', data=df, color="purple", scatter_kws={"s": 10}, order=2)
-        ax1.set_title('Performance during training')
-        plt.savefig('plot1.png')
+        ax1.set_title('Q-learning Performance')
+        plt.savefig('Performance.png')
 
         fig2, ax2 = plt.subplots()
         ax2 = sns.regplot(x='Training episodes', y='Win1', data=df, color="green", label='Win rate', scatter_kws={"s": 10}, order=2)
         ax2 = sns.regplot(x='Training episodes', y='Draw1', data=df, color="blue", label='Draw rate', scatter_kws={"s": 10}, order=2)
         ax2 = sns.regplot(x='Training episodes', y='Loss1', data=df, color="red", label='Loss rate', scatter_kws={"s": 10}, order=2)
-        ax2.set_title('Q-agent Crosses vs Random Naughts')
+        ax2.set_title('Q-agent Crosses vs Random Noughts')
         ax2.set_ylabel('Percentage')
         ax2.set_ylim([0,1])
-        ax2.legend()
-        plt.savefig('plot2.png')
+        ax2.legend(title='Q-agent:')
+        plt.savefig('Q vs Random.png')
 
         fig3, ax3 = plt.subplots()
         ax3 = sns.regplot(x='Training episodes', y='Win2', data=df, color="green", label='Win rate', scatter_kws={"s": 10}, order=2)
         ax3 = sns.regplot(x='Training episodes', y='Draw2', data=df, color="blue", label='Draw rate', scatter_kws={"s": 10}, order=2)
         ax3 = sns.regplot(x='Training episodes', y='Loss2', data=df, color="red", label='Loss rate', scatter_kws={"s": 10}, order=2)
-        ax3.set_title('Random Crosses vs Q-agent Naughts')
+        ax3.set_title('Random Crosses vs Q-agent Noughts')
         ax3.set_ylabel('Percentage')
         ax3.set_ylim([0,1])
-        ax3.legend()
-        plt.savefig('plot3.png')
+        ax3.legend(title='Random agent:')
+        plt.savefig('Random vs Q.png')
         return
     
     def is_game_over(self, state):
