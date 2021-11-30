@@ -101,11 +101,11 @@ class TicTacToe:
         best_action, best_q = None, None
         for action in self.possible_actions(state):
             q = self.Q[tuple(state)][action]
-            if player == 1: # maximise player 1's q
+            if player == 1: # maximise q of player 1
                 if best_q is None or best_q < q:
                     best_q = q
                     best_action = action
-            else: # minimise player 1's q
+            else: # minimise q of player 1
                 if best_q is None or best_q > q:
                     best_q = q
                     best_action = action
@@ -131,7 +131,6 @@ class TicTacToe:
             best_next_q = 0
         else:
             best_next_action, best_next_q = self.best_action(state, self.player*-1) # 2-player game so opponents best action!
-        # Bellman optimality equation
         new_q = q + self.alpha * (reward + self.gamma*best_next_q - q)
         self.Q[tuple(old_state)][action] = round(new_q, 3)
         return
