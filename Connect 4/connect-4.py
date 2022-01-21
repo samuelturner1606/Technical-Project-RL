@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-import mailbox
+import timeit
 
 @dataclass 
 class State():
@@ -11,14 +11,20 @@ class State():
         '''Find all possible next moves given the current state'''
         overlap = self.bitboard1 | self.bitboard2 # find all piece positions
         shifted_up = (overlap << (COLS+1)) | BOTTOM_BITMASK # bitshift up a row and fill in empty bottom row
-        return shifted_up & ~overlap & FULL_BITMASK
+        return (shifted_up & ~overlap & FULL_BITMASK)
     
     def to_mailbox(self) -> str:
         '''Convert the current state into mailbox representation'''
-        board1, board2  = self.to_binary(self.bitboard1), self.to_binary(self.bitboard2)
-        mailbox = [str( int(board2[bit]+board1[bit],2) ) for bit in range(BYTE_LENGTH)]
-        return ''.join(mailbox)
+        board1 = bin(self.bitboard1)[2:].zfill(BYTE_LENGTH)
+        board2  = bin(self.bitboard2)[2:].zfill(BYTE_LENGTH)
+        mailbox = [str(int(board2[bit]+board1[bit],2)) for bit in range(BYTE_LENGTH)]
+        return (''.join(mailbox))
     
+    def alt_mailbox(self) -> list[int]:
+        '''Alternate faster method to convert to mailbox representation'''
+        overlap = self.bitboard1 | self.bitboard2
+        return [(overlap & 1 << b and 1) << (self.bitboard2 & 1 << b and 1) for b in range(BYTE_LENGTH-1,-1,-1)]
+        
     @staticmethod
     def to_binary(bitboard: int) -> str:
         '''Convert a bitboard integer into a binary string'''
@@ -45,7 +51,7 @@ class Connect4():
 
     def render(self) -> None:
         '''Processes and prints the current state to the terminal'''
-        mailbox = self.state.to_mailbox()
+        mailbox = self.state.alt_mailbox()
         #b = mailbox.replace('0','.').replace('1','x').replace('2','o')
         for row in self.make2D(mailbox):
             print(row)
@@ -87,7 +93,7 @@ class Connect4():
                 
 
     @staticmethod
-    def make2D(binary: str) -> list[str]:
+    def make2D(binary: list) -> list[list]:
         '''Remove bitboard padding and split it by the number of rows'''
         return [binary[(COLS+1)*i:(COLS+1)*i+COLS] for i in range(ROWS)]
     
@@ -120,7 +126,7 @@ class Connect4():
             return True
 
 def main():
-    for episode in range(3):
+    for episode in range(1):
         env = Connect4()
         old_s = env.state
         while True:
