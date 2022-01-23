@@ -2,37 +2,30 @@ from dataclasses import dataclass
 
 @dataclass 
 class State():
-    '''Representation of the board game in binary'''
+    '''Representation of the board game in binary.'''
     bitboard1: int = 0
     bitboard2: int = 0
 
     def possible_moves(self) -> int:
-        '''Find all possible next moves given the current state'''
-        overlap = self.bitboard1 | self.bitboard2 # find all piece positions
+        '''Find all possible next moves given the state.'''
+        overlap = self.bitboard1 | self.bitboard2 # find all disc positions
         shifted_up = (overlap << (COLS+1)) | BOTTOM_BITMASK # bitshift up a row and fill in empty bottom row
         return ~overlap & shifted_up & FULL_BITMASK
     
-    def to_mailbox(self) -> str:
-        '''Convert the current state into mailbox representation'''
-        bin_string1 = bin(self.bitboard1)[2:].zfill(BYTE_LENGTH)
-        bin_string2  = bin(self.bitboard2)[2:].zfill(BYTE_LENGTH)
-        mailbox = [ str(int(bin_string2[bit] + bin_string1[bit],2)) for bit in range(BYTE_LENGTH) ]
-        return ''.join(mailbox)
-    
-    def alt_mailbox(self) -> list[int]:
-        '''Alternate faster method to convert to mailbox representation'''
+    def mailbox(self) -> list[int]:
+        '''Convert the state into mailbox representation.'''
         # (int & 1 << n and 1) gets the n'th bit of an int
         return [ (self.bitboard1 & (1 << n) and 1) + 2*(self.bitboard2 & (1 << n) and 1) for n in range(BYTE_LENGTH-1,-1,-1) ]
 
 class Connect4():
-    '''A Connect-4 reinforcement learning environment class'''
+    '''A Connect-4 reinforcement learning environment class.'''
     def __init__(self):
         self.state = State()
         self.player = 1 # player 1 = 1, player 2 = -1
         self.render()
         
     def step(self, action: int):
-        '''Applies an action to the environement and gets the reward'''
+        '''Applies an action to the environement and gets the reward.'''
         if self.player == 1:
             self.state.bitboard1 |= action
         else:
@@ -41,14 +34,27 @@ class Connect4():
         reward, done = self.is_game_over()
         self.player *= -1 # change player
         return self.state, reward, done
-
+    
     def render(self) -> None:
-        '''Processes and prints the current state to the terminal'''
-        mailbox = self.state.alt_mailbox()
+        '''Processes and prints the current state to the terminal.'''
+        mailbox = self.state.mailbox()
         for row in self.make2D(mailbox):
-            print(row)
+            if COLOUR:
+                colourful_row = ''
+                for disc in row:
+                    match disc:
+                        case 0:
+                            colourful_row += '\033[34m o'
+                        case 1:
+                            colourful_row += '\033[33m o'
+                        case 2:
+                            colourful_row += '\033[31m o'  
+                print(colourful_row + '\033[39m')
+            else:
+                print(row)
 
     def is_game_over(self):
+        '''Checks whether any terminal states have been reached'''
         if self.is_win(self.state.bitboard1): # player 1 wins
             done = True
             reward = 1
@@ -67,9 +73,9 @@ class Connect4():
         return reward, done
 
     def ask_for_action(self) -> int:
-        """Ask user for players next move"""
+        '''Asks user for players next move.'''
         while True:
-            move_col = input(f'\nPlayer {self.player % 3} enter a move column between 1-{COLS}: ')
+            move_col = input(f'\nPlayer \033[32m{self.player % 3}\033[39m enter a move column between \033[32m1-{COLS}\033[39m: ')
             if move_col.isnumeric():
                 move_col = int(move_col)
                 if move_col in range(1, COLS+1):
@@ -83,15 +89,14 @@ class Connect4():
             else:
                 print('\nOnly use the number keys!')
                 
-
     @staticmethod
     def make2D(board: list) -> list[list]:
-        '''Remove bitboard padding and split it by the number of rows'''
+        '''Remove bitboard row seperator bits and split it by the number of rows.'''
         return [ board[ (COLS+1)*row : (COLS+1)*row+COLS ] for row in range(ROWS) ]
     
     @staticmethod
     def col_bitmask(move_col: int) -> int:
-        '''Convert a move column integer into a bitmask to be used on a bitboard'''
+        '''Convert a move column into a bitmask to be used on a bitboard.'''
         zeroes_list = ['0']*(COLS+1)
         zeroes_list[move_col-1]='1'
         col_bitmask = ''.join(zeroes_list) * ROWS
@@ -99,7 +104,7 @@ class Connect4():
     
     @staticmethod
     def is_win(bitboard: int) -> bool:
-        '''Check if a bitboard integer has connect four'''
+        '''Check if a bitboard has connect four.'''
         # Check -
         pairs = bitboard & (bitboard >> 1)
         if pairs & (pairs >> 2):
@@ -133,4 +138,5 @@ if __name__ == "__main__":
     BYTE_LENGTH = ROWS * (COLS+1)
     BOTTOM_BITMASK = 2**(COLS+1) - 2
     FULL_BITMASK = 2**(BYTE_LENGTH) - 1 # used to remove extra bits from a left bitshift
+    COLOUR = True
     main()
