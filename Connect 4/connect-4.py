@@ -25,7 +25,7 @@ class Connect4():
         self.render()
         
     def step(self, action: int):
-        '''Applies an action to the environement and gets the reward.'''
+        '''Applies an action to the environment and gets the reward.'''
         if self.player == 1:
             self.state.bitboard1 |= action
         else:
@@ -36,7 +36,7 @@ class Connect4():
         return self.state, reward, done
     
     def render(self) -> None:
-        '''Processes and prints the current state to the terminal.'''
+        '''Processes and prints the current state.'''
         mailbox = self.state.mailbox()
         for row in self.make2D(mailbox):
             if COLOUR:
@@ -54,7 +54,7 @@ class Connect4():
                 print(row)
 
     def is_game_over(self):
-        '''Checks whether any terminal states have been reached'''
+        '''Checks whether any terminal states have been reached.'''
         if self.is_win(self.state.bitboard1): # player 1 wins
             done = True
             reward = 1
@@ -88,6 +88,13 @@ class Connect4():
                     print('\nColumn out of bounds!')
             else:
                 print('\nOnly use the number keys!')
+    
+    @property
+    def action_space(self): 
+        mailbox = self.state.mailbox()
+        top_row = mailbox[0:COLS]
+        possible_actions = [i+1 for i, v in enumerate(top_row) if v==0]
+        return possible_actions
                 
     @staticmethod
     def make2D(board: list) -> list[list]:
