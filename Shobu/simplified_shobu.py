@@ -2,6 +2,7 @@ class Shobu:
     def __init__(self) -> None:
         self.board1 = Board()
         self.board2 = Board()
+        self.done = False
 
     def render(self) -> None:
         '''Print the current game state.'''
@@ -9,6 +10,17 @@ class Shobu:
         print('\n')
         print(*self.board2.mailbox(), sep='\n')
         return
+    
+    def is_game_over(self):
+        '''Check if all of a players' stones have been removed from any of the boards.'''
+        for board in [self.board1, self.board2]:
+            if not board.bitboard1: # player 2 wins
+                self.done = True
+                return -1
+            elif not board.bitboard2: # player 1 wins
+                self.done = True
+                return 1
+        return # game still 
 
 class Board:
     def __init__(self) -> None:
@@ -21,4 +33,6 @@ class Board:
         return [ mailbox[ 5*row : 5*row+5 ] for row in range(4) ]
 
 s = Shobu()
+s.board2.bitboard1 = 0
 s.render()
+print(s.is_game_over())
