@@ -64,6 +64,15 @@ class Shobu:
             return (bits >> shift) & BITMASK
         else:
             return (bits << -shift) & BITMASK
+    
+    @staticmethod
+    def split(legal_moves: int) -> list[int]:
+        'Split `legal moves` into invidual moves by the on-bits.'
+        seperate_moves = []
+        while legal_moves:
+            seperate_moves.append(legal_moves & -legal_moves) # get least significant on-bit
+            legal_moves &= legal_moves-1 # remove least significant on-bit
+        return seperate_moves
 
 def view(bits: int, message: str = '') -> None:
     'For debugging.'
