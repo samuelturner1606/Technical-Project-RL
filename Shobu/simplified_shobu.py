@@ -90,17 +90,22 @@ def erode(x, direction, dist):
         x &= bitshift(x,direction,1)
     return x
 
-def legal_aggros1(board: Board, player: bool, direction: int):
+def legal_aggros(board: Board, player: bool, direction: int, distance: int):
     bits_p = board.bitboards[player]
     bits_o = board.bitboards[not player]
-    return ~bits_p & bitshift(bits_p, direction, 1) & ~erode(bits_o | bits_p,-direction,1)
+    legal = ~erode(bits_o | bits_p, -direction, 1) & ~bits_p
+    aggro1 = bitshift(bits_p, direction, 1) & legal
+    if distance == 1:
+        return aggro1
+    else: # distance == 2
+        return bitshift(aggro1, direction, 1) & legal
 
 # parity
 s = Shobu()
 b1 = 0b1001111
 b2 = 0b110011010110000000
 dis = 2
-dr = DIRECTIONS['S']
+dr = DIRECTIONS['E']
 
 '''
 a = bitshift(b1,dr,1) & b2
@@ -119,15 +124,20 @@ b2 ^= b1 & b2
 s.boards[1].bitboards = [b2, b1]
 s.boards[0].bitboards = [b2, b1]
 s.render()
-a = legal_aggros1(s.boards[0],True,dr) 
+a = legal_aggros(s.boards[0],True,dr,1) 
 
+# update with aggro 1 move
+'''
 change = dilate(a,-dr,1)
 change2 = dilate(a & b2,dr,1)
 new1 = change ^ b1
 new2 = change2 ^ b2
 s.boards[0].bitboards = [new2, new1]
+
 b = legal_aggros1(s.boards[0],True,dr) 
 legal2 = bitshift(a & bitshift(b,-dr,1),dr,1)
+'''
+s.boards[0].bitboards = [0,a]
+legal2 = legal_aggros(s.boards[1],True,dr,2)
 s.boards[1].bitboards = [0, legal2]
 s.render()
-
