@@ -39,19 +39,6 @@ def erode(x, direction, distance):
         x &= bitshift(x,direction,1)
     return x
 
-def legal_passives(direction: int, bits_p: int, bits_o: int):
-    'Calculate the ending squares of legal passive moves in a direction.'
-    legal = ~(bits_p | bits_o)
-    passive1 = bitshift(bits_p, direction, 1) & legal
-    passive2 = bitshift(passive1, direction, 1) & legal
-    return passive1, passive2
-     
-def legal_aggros(direction: int, bits_p: int, bits_o: int):
-    legal = ~erode(bits_o | bits_p, -direction, 1) & ~bits_p
-    aggro1 = bitshift(bits_p, direction, 1) & legal
-    aggro2 = bitshift(aggro1, direction, 1) & legal
-    return aggro1, aggro2
-
 class State:
     'Object containing all information required to uniquely define a simplified Shōbu board game state.'
     def __init__(self, player: bool = True, board1: list[int] = [0b1111, 0b1111000000000000000], board2: list[int] = [0b1111, 0b1111000000000000000]) -> None:
@@ -82,10 +69,14 @@ class State:
         # passive move
         self.boards[self.player][self.player] ^= start_square|end_square
         # aggro move
-        a = dilate(start_square,direction,distance)
+        aggro_board = self.boards[not self.player]
+        aggro_board[self.player] ^= start_square|end_square
 
-        self.boards[not self.player] = NotImplemented
-        raise NotImplementedError
+        path = dilate(start_square,direction,distance)
+        collision = path & aggro_board[not self.player]
+        if collision: 
+            landing = bitshift(end_square, direction, 1)
+            aggro_board[not self.player] ^= landing|collision
         return
     
     def all_legal_moves(self):
@@ -120,7 +111,7 @@ class State:
         return legals
     
     @staticmethod
-    def random_move(all_legal_moves: dict[ str, dict[int,int] ]):
+    def random_move(all_legal_moves: dict[ str, dict[int,int] ]) -> int:
         direction = choice( list(all_legal_moves) )
         distance = choice( list(all_legal_moves[direction]) )
         random_moves = split( all_legal_moves[direction][distance] )
@@ -129,7 +120,9 @@ class State:
 if __name__ == '__main__':
     game = State()
     game.render()
-    a = game.all_legal_moves()
-    b = game.random_move(a)
-    view(b)
+    game.move(1 << 5, DIRECTIONS['NW'],2)
+    game.render()
+    game.player = not game.player
+    game.move(1 << 6, DIRECTIONS['SE'],1)
+    game.render()
     pass
