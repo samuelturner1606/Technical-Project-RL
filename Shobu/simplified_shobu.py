@@ -2,6 +2,7 @@
 A simplified version of the board game 'Shōbu' played on only two of the usual four boards. 
 The game logic is implemented using bitboards.
 '''
+from random import choice
 
 DIRECTIONS = {'N':5, 'E':-1, 'S':-5, 'W':1, 'NE':4, 'NW': 6, 'SE': -6, 'SW': -4}
 BITMASK = 0b01111011110111101111 # bitmask deletes bits that move off the board
@@ -93,12 +94,42 @@ class State:
         o1, p1 = self.boards[self.player]
         o2, p2 = self.boards[not self.player]
         for key, direction in DIRECTIONS.items():
-            passive1, passive2 = legal_passives(direction, p1, o1) 
-            aggro1, aggro2 = legal_aggros(direction, p2, o2)
-            moves[key] = (passive1 & aggro1, passive2 & aggro2)
+            legals = self.legal_moves(direction, p1, p2, o1, o2)
+            if legals:
+                moves[key] = legals
         return moves
+
+    @staticmethod
+    def legal_moves(direction: int, bits_p1: int, bits_p2: int, bits_o1: int, bits_o2: int) -> dict[int,int]:
+        'Calculate the ending squares of legal moves in a direction, given the bitboards of the current player and opponent.'
+        legals = {}
+        legal_passive = ~(bits_p1 | bits_o1)
+        passive1 = bitshift(bits_p1, direction, 1) & legal_passive
+        if passive1: # can play a passive move at distance 1
+            legal_aggro = ~erode(bits_o2 | bits_p2, -direction, 1) & ~bits_p2
+            aggro1 = bitshift(bits_p2, direction, 1) & legal_aggro
+            legal1 = passive1 & aggro1 
+            if legal1: # has legal moves at distance 1
+                legals[1] = legal1
+                passive2 = bitshift(passive1, direction, 1) & legal_passive
+                if passive2: # can play a passive move at distance 2
+                    aggro2 = bitshift(aggro1, direction, 1) & legal_aggro
+                    legal2 = passive2 & aggro2
+                    if legal2:
+                        legals[2] = legal2
+        return legals
+    
+    @staticmethod
+    def random_move(all_legal_moves: dict[ str, dict[int,int] ]):
+        direction = choice( list(all_legal_moves) )
+        distance = choice( list(all_legal_moves[direction]) )
+        random_moves = split( all_legal_moves[direction][distance] )
+        return choice(random_moves)
 
 if __name__ == '__main__':
     game = State()
     game.render()
+    a = game.all_legal_moves()
+    b = game.random_move(a)
+    view(b)
     pass
