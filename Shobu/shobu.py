@@ -58,19 +58,18 @@ class Board:
 
 class State:
     'Object containing all information required to uniquely define a Shōbu game state.'
-    def __init__(self, player: bool = True, side1: list[Board] = [Board(False), Board(True)], side2: list[Board] = [Board(True), Board(False)]) -> None:
+    def __init__(self, player: bool = True, side1: list[Board] = [Board(True), Board(False)], side2: list[Board] = [Board(False), Board(True)]) -> None:
         self.player = player # player 1 = True, player 2 = False
         self.boards = [side2, side1] # index 1 corresponds to player 1
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
-        print(f'{message}----------')
-        for side in [ self.boards[self.player], self.boards[not self.player] ]:
+        print(f'----------{message}')
+        for side in self.boards:
             left = side[0].mailbox()
             right = side[1].mailbox()
             for row in range(4):
                 print(left[row]+right[row])
-            print('')
         return
     
     def is_game_over(self) -> int:
@@ -84,28 +83,43 @@ class State:
     
     def move(self, board1: Board, board2: Board, end_square: int, direction: int, distance: int):
         start_square = bitshift(end_square, -direction, distance)
-        board1[self.player] ^= start_square|end_square
-        board2[self.player] ^= start_square|end_square
+        board1.bits[self.player] ^= start_square|end_square
+        board2.bits[self.player] ^= start_square|end_square
         path = dilate(start_square,direction,distance)
-        collision = path & board2[not self.player]
+        collision = path & board2.bits[not self.player]
         if collision: 
             landing = bitshift(end_square, direction, 1)
-            board2[not self.player] ^= collision|landing
+            board2.bits[not self.player] ^= collision|landing
         return
     
-    def ask_for_move(self, homeboard: int, aggroboard: int, end_square: int, direction: int, distance: int):
-        home = input('Which passive board 1-4?')
-        aggro = input('Which aggro board 1-4?')
-        answer = int
-        match answer:
-            case 1:
-                board1 = self.boards[not self.player][0]
-            case 2:
-                board2 = self.boards[not self.player][1]
-            case 3:
-                board3 = self.boards[self.player][0]
-            case 4:
-                board4 = self.boards[self.player][1]
+    def input_move(self) -> None:
+        self.render()
+        answers = []
+        for answer in [input('Which passive board 1-4? '), input('Which aggro board 1-4? ')]:
+            match answer:
+                case '1':
+                    answers.append( self.boards[0][0] )
+                case '2':
+                    answers.append( self.boards[0][1] )
+                case '3':
+                    answers.append( self.boards[1][0] )
+                case '4':
+                    answers.append( self.boards[1][1] )
+                case _:
+                    raise ValueError('Board invalid')
+        if answers[0] in self.boards[self.player] and answers[0].type != answers[1].type:
+            end_square = 1 << int( input('Ending square 0-19? ') )
+            raise NotImplemented # need to specify two ending squares
+            direction = DIRECTIONS[ input('Compass direction? ').upper() ]
+            distance = int( input('Distance 1-2? ') )
+            legals = self.legal_moves(direction, answers[0], answers[1])[distance]
+            if legals & end_square:
+                self.move(answers[0], answers[1], end_square, direction, distance)
+                self.render()
+            else:
+                raise ValueError('Illegal move')
+        else:
+            raise ValueError('Chosen boards invalid')
         return
 
     def all_legal_moves(self):
@@ -120,11 +134,11 @@ class State:
 
     def legal_moves(self, direction: int, board1: Board, board2: Board) -> dict[int,int]:
         legals = {}
-        legal_passive = ~(board1[self.player] | board1[not self.player])
-        passive1 = bitshift(board1[self.player], direction, 1) & legal_passive
+        legal_passive = ~(board1.bits[self.player] | board1.bits[not self.player])
+        passive1 = bitshift(board1.bits[self.player], direction, 1) & legal_passive
         if passive1: # can play a passive move at distance 1
-            legal_aggro = ~erode(board2[self.player] | board2[not self.player], -direction, 1) & ~bits_p2
-            aggro1 = bitshift(board2[self.player], direction, 1) & legal_aggro
+            legal_aggro = ~erode(board2.bits[self.player] | board2.bits[not self.player], -direction, 1) & ~board2.bits[self.player]
+            aggro1 = bitshift(board2.bits[self.player], direction, 1) & legal_aggro
             legal1 = passive1 & aggro1 
             if legal1: # has legal moves at distance 1
                 legals[1] = legal1
@@ -145,6 +159,11 @@ class State:
 
 if __name__ == '__main__':
     game = State()
-    game.render()
-    game.is_game_over()
-    pass
+    while True:
+        game.input_move()
+        reward = game.is_game_over()
+        if reward:
+            print(f'Game over! reward = {reward}')
+            break
+        else:
+            game.player = not game.player
