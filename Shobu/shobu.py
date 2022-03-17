@@ -45,6 +45,14 @@ def erode(x, direction, distance):
         x &= bitshift(x,direction,1)
     return x
 
+def f(a:int, b:int, c:int):
+    'Testing legal aggro permutations'
+    p2 = b & 1
+    p3 = c & 1
+    # not pushing more than one stone or your own stones
+    F1 = not( (a and b) or p2 ) # b can be replaced with o2 here
+    F2 = not( (b or c) and (a or b or p3) and (a or c or p2) )
+    return F1, F2
 
 class State:
     'Object containing all information required to uniquely define a Shōbu game state.'
@@ -70,7 +78,7 @@ class State:
             colour = '\033[39m' # white
         mailbox_2D = 4 * [colour]
         for row in range(4):
-            for n in range(5*row, 5*row+5):
+            for n in range(5*row, 5*row+4):
                 mailbox_2D[row] += str( (bits[1] & (1 << n) and 1) + 2 * (bits[0] & (1 << n) and 1) )
         return mailbox_2D
     
@@ -83,16 +91,30 @@ class State:
             return -1 # player 2 wins
         return 0 # game not over
     
-    def move(self, board1: list[int], board2: list[int], end_square: int, direction: int, distance: int):
-        start_square = bitshift(end_square, -direction, distance)
-        board1[self.player] ^= start_square|end_square
-        board2[self.player] ^= start_square|end_square
-        path = dilate(start_square,direction,distance)
+    def move(self, board1: list[int], board2: list[int], end1: int, end2: int, direction: int, distance: int):
+        'Return the boards after a legal move has been applied to them'
+        # passive move
+        start1 = bitshift(end1, -direction, distance)
+        view(start1, 'start1')
+        view(board1[self.player], 'before1')
+        board1[self.player] ^= (start1 | end1)
+        view(board1[self.player], 'after1')
+        # aggressive move
+        start2 = bitshift(end2, -direction, distance)
+        view(start2, 'start2')
+        view(board2[self.player], 'before2')
+        board2[self.player] ^= (start2 | end2)
+        view(board2[self.player], 'after2')
+        path = dilate(start2, direction, distance)
+        view(path, 'path')
         collision = path & board2[not self.player]
         if collision: 
-            landing = bitshift(end_square, direction, 1)
-            board2[not self.player] ^= collision|landing
-        return
+            view(collision, 'collision')
+            landing = bitshift(end2, direction, 1)
+            view(board2[not self.player], 'before3')
+            board2[not self.player] ^= (collision | landing)
+            view(board2[not self.player], 'after3')
+        return board1, board2
     
     def input_move(self) -> None:
         self.render()
@@ -157,21 +179,23 @@ class State:
         passive2 = bitshift(passive1, direction, 1) & empty
         return passive1, passive2
 
-def f(a:int, b:int, c:int):
-    'Testing legal aggro permutations'
-    p2 = b & 1
-    p3 = c & 1
-    # not pushing more than one stone or your own stones
-    aggro1 = not( (a and b) or p2 ) # b can be replaced with o2 here
-    aggro2 = not( (b or c) and (a or b or p3) and (a or c or p2) )
-    return aggro1, aggro2
-
 if __name__ == '__main__':
     game = State()
     game.boards = [ [ [457,11300], [3,80] ] , [ [270600,4166] , [270600,232609] ] ]
     game.render()
     game.player = not game.player
-    aggro1, aggro2 = game.legal_aggros( [457,11300] , DIRECTIONS['SW'])
-    view(aggro1, 'aggro1')
-    view(aggro2, 'aggro2')
+    direction = DIRECTIONS['SW']
+
+    b1 = [270600,4166]
+    b2 = [457,11300]
+
+    a1, a2 = game.legal_aggros( b2 , direction)
+    p1, p2 = game.legal_passives( b1 , direction)
+
+    rand_a2 = choice(split(a2))
+    rand_p2 = choice(split(p2))
+
+    new_b1, new_b2 = game.move(b1, b2, rand_p2, rand_a2, direction, 2)
+    game.boards = [ [ new_b2, [0,0] ] , [ new_b1 , [0,0] ] ]
+    game.render()
     pass
