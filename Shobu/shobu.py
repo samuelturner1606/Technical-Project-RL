@@ -98,55 +98,80 @@ class State:
         self.render()
         return
 
-    def board_combos(self):
-        for i in 0,1:
-            passive_board = self.boards[self.player][i]
-            for j in (self.player,not i), (not self.player,i) :
-                aggro_board = self.boards[j[0]][j[1]]
-        return
-
-    def all_legal_moves(self, passive_board: list[int], aggro_board: list[int]) -> dict[str, dict[int, int]]:
-        moves = {}
-        for key, direction in DIRECTIONS.items():
-            legals = self.legal_moves(direction, passive_board, aggro_board)
-            if legals:
-                moves[key] = legals
-        return moves
-
-    def legal_moves(self, direction: int, passive_board: list[int], aggro_board: list[int]) -> dict[int,int]:
-        legals = {}
-        legal_passive = ~(passive_board[self.player] | passive_board[not self.player])
-        passive1 = bitshift(passive_board[self.player], direction, 1) & legal_passive
-        if passive1: # can play a passive move at distance 1
-            legal_aggro = ~erode(aggro_board[self.player] | aggro_board[not self.player], -direction, 1) & ~aggro_board[self.player]
-            aggro1 = bitshift(aggro_board[self.player], direction, 1) & legal_aggro
-            legal1 = passive1 & aggro1 
-            if legal1: # has legal moves at distance 1
-                legals[1] = legal1
-                passive2 = bitshift(passive1, direction, 1) & legal_passive
-                if passive2: # can play a passive move at distance 2
-                    aggro2 = bitshift(aggro1, direction, 1) & legal_aggro
-                    legal2 = passive2 & aggro2
-                    if legal2:
-                        legals[2] = legal2
-        return legals
-    
     @staticmethod
     def random_move(all_legal_moves: dict[ str, dict[int,int] ]) -> int:
         direction = choice( list(all_legal_moves) )
         distance = choice( list(all_legal_moves[direction]) )
         random_moves = split( all_legal_moves[direction][distance] )
         return choice(random_moves)
+    
+    def all_legal_moves(self) -> dict:
+        'Returns { boards? : { direction : { distance : moves } } }'
+        all_legals = {}
+        for i in False,True:
+            passive_board = self.boards[self.player][i]
+            for j in (self.player, not i), (not self.player, i) :
+                aggro_board = self.boards[j[0]][j[1]]
+                print((self.player, i), j)
+                all_moves = self.legal_moves(passive_board, aggro_board)
+                if all_moves:
+                    all_legals[((self.player, i), j)] = all_moves
+        return all_legals
+
+    def legal_moves(self, passive_board: list[int], aggro_board: list[int]) -> dict[str, dict[int, int]]:
+        'Returns { direction : { distance : moves } } '
+        moves = {}
+        for key, direction in DIRECTIONS.items():
+            legals = self.legals(direction, passive_board, aggro_board)
+            if legals:
+                moves[key] = legals
+        return moves
+
+    def legals(self, direction: int, passive_board: list[int], aggro_board: list[int]) -> dict[int,int]:
+        'Returns { distance : moves } where moves are ending positions'
+        legals = {}
+        passive1, passive2 = self.legal_passives(passive_board, direction)
+        aggro1, aggro2 = self.legal_aggros(aggro_board, direction)
+        if passive1 and aggro1: # has legal moves at distance 1
+            legals[1] = (passive1, aggro1)
+            if passive2 and aggro2:
+                legals[2] = (passive2, aggro2)
+        return legals
+    
+    def legal_aggros(self, aggro_board: list[int], direction: int) -> tuple[int]:
+        p2 = aggro_board[self.player]
+        p3 = bitshift(p2, direction, 1)
+        x2 = p2 | aggro_board[not self.player]
+        x1 = bitshift(x2, -direction, 1)
+        x3 = bitshift(x2, direction, 1)
+        # not pushing more than one stone or your own stones
+        legal_aggro1 = ~( (x1 & x2) | p2 )
+        aggro1 = bitshift(p2, direction, 1) & legal_aggro1 
+        legal_aggro2 = ~( (x2|x3) & (x1|x2|p3) & (x1|x3|p2) )
+        aggro2 = bitshift(p2, direction, 2) & legal_aggro2
+        return aggro1, aggro2
+
+    def legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
+        empty = ~(passive_board[self.player] | passive_board[not self.player])
+        passive1 = bitshift(passive_board[self.player], direction, 1) & empty
+        passive2 = bitshift(passive1, direction, 1) & empty
+        return passive1, passive2
+
+def f(a:int, b:int, c:int):
+    'Testing legal aggro permutations'
+    p2 = b & 1
+    p3 = c & 1
+    # not pushing more than one stone or your own stones
+    aggro1 = not( (a and b) or p2 ) # b can be replaced with o2 here
+    aggro2 = not( (b or c) and (a or b or p3) and (a or c or p2) )
+    return aggro1, aggro2
 
 if __name__ == '__main__':
     game = State()
-    '''
-    while True:
-        game.input_move()
-        reward = game.is_game_over()
-        if reward:
-            print(f'Game over! reward = {reward}')
-            break
-        else:
-            game.player = not game.player
-    '''
+    game.boards = [ [ [457,11300], [3,80] ] , [ [270600,4166] , [270600,232609] ] ]
+    game.render()
+    game.player = not game.player
+    aggro1, aggro2 = game.legal_aggros( [457,11300] , DIRECTIONS['SW'])
+    view(aggro1, 'aggro1')
+    view(aggro2, 'aggro2')
+    pass
