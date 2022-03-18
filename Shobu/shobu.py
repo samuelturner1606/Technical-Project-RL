@@ -3,15 +3,15 @@ A bitboard implementation of the board game 'Shōbu'.
 '''
 from random import choice
 
-DIRECTIONS = {'N':5, 'E':-1, 'S':-5, 'W':1, 'NE':4, 'NW': 6, 'SE': -6, 'SW': -4}
-BITMASK = 0b01111011110111101111 # bitmask deletes bits that move off the board
+DIRECTIONS = {'N':6, 'E':-1, 'S':-6, 'W':1, 'NE':5, 'NW': 7, 'SE': -7, 'SW': -5}
+BITMASK = 0b1111001111001111001111 # bitmask deletes bits that move off the board
 MAP = { # (p,i): (p, ~i), (~p, i)
     (0,0) : ( (0,1), (1,0) ),
     (0,1) : ( (0,0), (1,1) ),
     (1,0) : ( (0,0), (1,1) ),
     (1,1) : ( (0,1), (1,0) )
     }
-START_BOARD = [0b1111, 0b1111000000000000000] # index 1 corresponds to player 1
+START_BOARD = [0b1111, 0b1111000000000000000000] # index 1 corresponds to player 1
 
 def bitshift(bits: int, direction: int, distance: int) -> int:
     shift = direction * distance
@@ -19,7 +19,7 @@ def bitshift(bits: int, direction: int, distance: int) -> int:
         return (bits >> shift) & BITMASK
     else:
         return (bits << -shift) & BITMASK
-    
+
 def split(legal_moves: int) -> list[int]:
     'Split `legal moves` into invidual moves by the on-bits.'
     seperate_moves = []
@@ -30,22 +30,24 @@ def split(legal_moves: int) -> list[int]:
 
 def view(bits: int, message: str = '') -> None:
     'For debugging.'
-    mailbox = [ bits & (1 << n) and 1  for n in range(20) ]
-    mailbox_2D = [ mailbox[ 5*row : 5*row+5 ] for row in range(4) ]
+    mailbox = [ bits & (1 << n) and 1  for n in range(24) ]
+    mailbox_2D = [ mailbox[ 6*row : 6*row+6 ] for row in range(4) ]
     print(*mailbox_2D, sep='\n', end=f'\n{message}\n\n')
     return
 
-def dilate(x, direction, distance):
-    for _ in range(distance):
-        x |= bitshift(x,direction,1)
-    return x
+def mailbox(bits: list[int], type: bool):
+    'Transform the bitboards into a 2D mailbox representation. Type refers to whether the board is light = 0 or dark = 1.'
+    if type:
+        colour = '\033[34m' # blue
+    else:
+        colour = '\033[39m' # white
+    mailbox_2D = 4 * [colour]
+    for row in range(4):
+        for n in range(6*row, 6*row+4):
+            mailbox_2D[row] += str( (bits[1] & (1 << n) and 1) + 2 * (bits[0] & (1 << n) and 1) )
+    return mailbox_2D
 
-def erode(x, direction, distance):
-    for _ in range(distance):
-        x &= bitshift(x,direction,1)
-    return x
-
-def f(a:int, b:int, c:int):
+def _f(a:int, b:int, c:int):
     'Testing legal aggro permutations'
     p2 = b & 1
     p3 = c & 1
@@ -62,25 +64,13 @@ class State:
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
-        print(f'----------{message}')
+        print(f'--------{message}')
         for i in 0,1:
-            left = self.mailbox(self.boards[i][0], i^0)
-            right = self.mailbox(self.boards[i][1], i^1)
+            left = mailbox(self.boards[i][0], i^0)
+            right = mailbox(self.boards[i][1], i^1)
             for row in range(4):
                 print(left[row]+right[row])
         return
-    
-    def mailbox(self, bits: list[int], type: bool):
-        'Transform the bitboards into a 2D mailbox representation. Type refers to whether the board is light = 0 or dark = 1.'
-        if type:
-            colour = '\033[34m' # blue
-        else:
-            colour = '\033[39m' # white
-        mailbox_2D = 4 * [colour]
-        for row in range(4):
-            for n in range(5*row, 5*row+4):
-                mailbox_2D[row] += str( (bits[1] & (1 << n) and 1) + 2 * (bits[0] & (1 << n) and 1) )
-        return mailbox_2D
     
     def is_game_over(self) -> int:
         '''The first player to lose all their stones on any board loses the game. 
@@ -92,7 +82,7 @@ class State:
         return 0 # game not over
     
     def move(self, board1: list[int], board2: list[int], end1: int, end2: int, direction: int, distance: int):
-        'Return the boards after a legal move has been applied to them'
+        'Update the two boards with the legal moves'
         # passive move
         start1 = bitshift(end1, -direction, distance)
         view(start1, 'start1')
@@ -105,7 +95,7 @@ class State:
         view(board2[self.player], 'before2')
         board2[self.player] ^= (start2 | end2)
         view(board2[self.player], 'after2')
-        path = dilate(start2, direction, distance)
+        path = end2 | bitshift(end2, -direction, 1)
         view(path, 'path')
         collision = path & board2[not self.player]
         if collision: 
@@ -116,51 +106,58 @@ class State:
             view(board2[not self.player], 'after3')
         return board1, board2
     
-    def input_move(self) -> None:
-        self.render()
-        return
-
-    @staticmethod
-    def random_move(all_legal_moves: dict[ str, dict[int,int] ]) -> int:
-        direction = choice( list(all_legal_moves) )
-        distance = choice( list(all_legal_moves[direction]) )
-        random_moves = split( all_legal_moves[direction][distance] )
-        return choice(random_moves)
-    
     def all_legal_moves(self) -> dict:
-        'Returns { boards? : { direction : { distance : moves } } }'
-        all_legals = {}
+        '''Find all legal moves.\n
+        Returns { boards: { direction : { distance : (passive moves, aggro moves) } } }\n
+        Where boards are the indice tuples and moves are ending positions'''
+        print(self.player)
+        output = {}
         for i in False,True:
             passive_board = self.boards[self.player][i]
             for j in (self.player, not i), (not self.player, i) :
                 aggro_board = self.boards[j[0]][j[1]]
                 print((self.player, i), j)
-                all_moves = self.legal_moves(passive_board, aggro_board)
-                if all_moves:
-                    all_legals[((self.player, i), j)] = all_moves
-        return all_legals
+                moves = self.legal_moves(passive_board, aggro_board)
+                if moves:
+                    output[((self.player, i), j)] = moves
+        return output
 
-    def legal_moves(self, passive_board: list[int], aggro_board: list[int]) -> dict[str, dict[int, int]]:
-        'Returns { direction : { distance : moves } } '
-        moves = {}
+    def legal_moves(self, passive_board: list[int], aggro_board: list[int]) -> dict:
+        '''Find all legal moves in all directions given the two boards to play on.\n
+        Returns { direction : { distance : (passive moves, aggro moves) } }, where moves are ending positions'''
+        output = {}
         for key, direction in DIRECTIONS.items():
-            legals = self.legals(direction, passive_board, aggro_board)
-            if legals:
-                moves[key] = legals
-        return moves
+            print(key)
+            moves = self.legals(direction, passive_board, aggro_board)
+            if moves:
+                output[key] = moves
+        return output
 
-    def legals(self, direction: int, passive_board: list[int], aggro_board: list[int]) -> dict[int,int]:
-        'Returns { distance : moves } where moves are ending positions'
-        legals = {}
+    def legals(self, direction: int, passive_board: list[int], aggro_board: list[int]) -> dict:
+        '''Find all legal moves in a direction given the two boards to play on.\n
+        Returns { distance : (passive moves, aggro moves) }, where moves are ending positions'''
+        output = {}
         passive1, passive2 = self.legal_passives(passive_board, direction)
         aggro1, aggro2 = self.legal_aggros(aggro_board, direction)
         if passive1 and aggro1: # has legal moves at distance 1
-            legals[1] = (passive1, aggro1)
+            output[1] = (passive1, aggro1)
+            view(passive1, 'passive1')
+            view(aggro1, 'aggro1')
             if passive2 and aggro2:
-                legals[2] = (passive2, aggro2)
-        return legals
+                output[2] = (passive2, aggro2)
+                view(passive2, 'passive2')
+                view(aggro2, 'aggro2')
+        return output
+    
+    def legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
+        'Find the ending squares of all legal passive moves, for all distances, in a direction, on a given board'
+        empty = ~(passive_board[self.player] | passive_board[not self.player])
+        passive1 = bitshift(passive_board[self.player], direction, 1) & empty
+        passive2 = bitshift(passive1, direction, 1) & empty
+        return passive1, passive2
     
     def legal_aggros(self, aggro_board: list[int], direction: int) -> tuple[int]:
+        'Find the ending squares of all legal aggro moves, for all distances, in a direction, on a given board'
         p2 = aggro_board[self.player]
         p3 = bitshift(p2, direction, 1)
         x2 = p2 | aggro_board[not self.player]
@@ -173,29 +170,8 @@ class State:
         aggro2 = bitshift(p2, direction, 2) & legal_aggro2
         return aggro1, aggro2
 
-    def legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
-        empty = ~(passive_board[self.player] | passive_board[not self.player])
-        passive1 = bitshift(passive_board[self.player], direction, 1) & empty
-        passive2 = bitshift(passive1, direction, 1) & empty
-        return passive1, passive2
-
 if __name__ == '__main__':
     game = State()
-    game.boards = [ [ [457,11300], [3,80] ] , [ [270600,4166] , [270600,232609] ] ]
+    game.boards = [ [ [905,45124], [3,128] ] , [ [2130440,16518] , [2130440,1585473] ] ]
     game.render()
-    game.player = not game.player
-    direction = DIRECTIONS['SW']
-
-    b1 = [270600,4166]
-    b2 = [457,11300]
-
-    a1, a2 = game.legal_aggros( b2 , direction)
-    p1, p2 = game.legal_passives( b1 , direction)
-
-    rand_a2 = choice(split(a2))
-    rand_p2 = choice(split(p2))
-
-    new_b1, new_b2 = game.move(b1, b2, rand_p2, rand_a2, direction, 2)
-    game.boards = [ [ new_b2, [0,0] ] , [ new_b1 , [0,0] ] ]
-    game.render()
-    pass
+    game.all_legal_moves()
