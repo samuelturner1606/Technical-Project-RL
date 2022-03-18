@@ -35,7 +35,7 @@ def view(bits: int, message: str = '') -> None:
     print(*mailbox_2D, sep='\n', end=f'\n{message}\n\n')
     return
 
-def mailbox(bits: list[int], type: bool):
+def mailbox(bits: list[int], type: bool) -> list[list[int]]:
     'Transform the bitboards into a 2D mailbox representation. Type refers to whether the board is light = 0 or dark = 1.'
     if type:
         colour = '\033[34m' # blue
@@ -55,6 +55,14 @@ def _f(a:int, b:int, c:int):
     F1 = not( (a and b) or p2 ) # b can be replaced with o2 here
     F2 = not( (b or c) and (a or b or p3) and (a or c or p2) )
     return F1, F2
+
+def rand_moves(all_legals: dict):
+    'Return legal passive and aggro moves in a random board combo, direction and distance.'
+    boards = choice(list(all_legals))
+    direction = choice(list(all_legals[boards]))
+    dist = choice(list(all_legals[boards][direction]))
+    passives, aggros = all_legals[boards][direction][dist]
+    return passives, aggros
 
 class State:
     'Object containing all information required to uniquely define a Shōbu game state.'
@@ -106,49 +114,43 @@ class State:
             view(board2[not self.player], 'after3')
         return board1, board2
     
-    def all_legal_moves(self) -> dict:
-        '''Find all legal moves.\n
+    def all_legals(self) -> dict[tuple,dict[str,dict[int,tuple]]]:
+        '''Find all legal moves for all board combinations.\n
         Returns { boards: { direction : { distance : (passive moves, aggro moves) } } }\n
         Where boards are the indice tuples and moves are ending positions'''
-        print(self.player)
+        b = self.board_moves()
         output = {}
         for i in False,True:
             passive_board = self.boards[self.player][i]
             for j in (self.player, not i), (not self.player, i) :
                 aggro_board = self.boards[j[0]][j[1]]
-                print((self.player, i), j)
-                moves = self.legal_moves(passive_board, aggro_board)
-                if moves:
-                    output[((self.player, i), j)] = moves
-        return output
-
-    def legal_moves(self, passive_board: list[int], aggro_board: list[int]) -> dict:
-        '''Find all legal moves in all directions given the two boards to play on.\n
-        Returns { direction : { distance : (passive moves, aggro moves) } }, where moves are ending positions'''
-        output = {}
-        for key, direction in DIRECTIONS.items():
-            print(key)
-            moves = self.legals(direction, passive_board, aggro_board)
-            if moves:
-                output[key] = moves
-        return output
-
-    def legals(self, direction: int, passive_board: list[int], aggro_board: list[int]) -> dict:
-        '''Find all legal moves in a direction given the two boards to play on.\n
-        Returns { distance : (passive moves, aggro moves) }, where moves are ending positions'''
-        output = {}
-        passive1, passive2 = self.legal_passives(passive_board, direction)
-        aggro1, aggro2 = self.legal_aggros(aggro_board, direction)
-        if passive1 and aggro1: # has legal moves at distance 1
-            output[1] = (passive1, aggro1)
-            view(passive1, 'passive1')
-            view(aggro1, 'aggro1')
-            if passive2 and aggro2:
-                output[2] = (passive2, aggro2)
-                view(passive2, 'passive2')
-                view(aggro2, 'aggro2')
+                directions = {}
+                for key in DIRECTIONS.keys():
+                    distances = {}
+                    passives = b[tuple(passive_board)][key][0]
+                    aggros = b[tuple(aggro_board)][key][1]
+                    if passives[0] and aggros[0]: # has legal moves at distance 1
+                        distances[1] = (passives[0], aggros[0])
+                        if passives[1] and aggros[1]: # has legal moves at distance 2
+                            distances[2] = (passives[1], aggros[1])
+                        directions[key] = distances
+                if directions:
+                    output[((self.player,i), j)] = directions
         return output
     
+    def board_moves(self) -> dict[tuple,dict[int,tuple]]:
+        '''Find all legal moves, in all directions, on all boards.\n
+        Returns { board : { direction : (passive moves, aggro moves) } }'''
+        output = {}
+        for side in self.boards:
+            for board in side:
+                temp = {}
+                for key, d in DIRECTIONS.items():
+                    temp[key] = (self.legal_passives(board,d), self.legal_aggros(board,d))
+                if temp:
+                    output[tuple(board)] = temp
+        return output
+
     def legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
         'Find the ending squares of all legal passive moves, for all distances, in a direction, on a given board'
         empty = ~(passive_board[self.player] | passive_board[not self.player])
@@ -174,4 +176,3 @@ if __name__ == '__main__':
     game = State()
     game.boards = [ [ [905,45124], [3,128] ] , [ [2130440,16518] , [2130440,1585473] ] ]
     game.render()
-    game.all_legal_moves()
