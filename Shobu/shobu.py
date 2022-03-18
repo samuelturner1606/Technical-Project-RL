@@ -56,13 +56,21 @@ def _f(a:int, b:int, c:int):
     F2 = not( (b or c) and (a or b or p3) and (a or c or p2) )
     return F1, F2
 
-def rand_moves(all_legals: dict):
-    'Return legal passive and aggro moves in a random board combo, direction and distance.'
+def get_board(coords: tuple[int]) -> list[int]:
+    return game.boards[coords[0]][coords[1]]
+
+def make_rand_move():
+    'Make a random legal move.'
+    all_legals = game.all_legals()
     boards = choice(list(all_legals))
     direction = choice(list(all_legals[boards]))
     dist = choice(list(all_legals[boards][direction]))
+    print(f'boards:{boards}, direction:{direction}, distance:{dist}')
     passives, aggros = all_legals[boards][direction][dist]
-    return passives, aggros
+    passive = choice(split(passives))
+    aggro = choice(split(aggros))
+    game.move(get_board(boards[0]),get_board(boards[1]),passive,aggro,DIRECTIONS[direction],dist)
+    return
 
 class State:
     'Object containing all information required to uniquely define a Shōbu game state.'
@@ -93,13 +101,11 @@ class State:
         'Update the two boards with the legal moves'
         # passive move
         start1 = bitshift(end1, -direction, distance)
-        view(start1, 'start1')
         view(board1[self.player], 'before1')
         board1[self.player] ^= (start1 | end1)
         view(board1[self.player], 'after1')
         # aggressive move
         start2 = bitshift(end2, -direction, distance)
-        view(start2, 'start2')
         view(board2[self.player], 'before2')
         board2[self.player] ^= (start2 | end2)
         view(board2[self.player], 'after2')
@@ -114,7 +120,7 @@ class State:
             view(board2[not self.player], 'after3')
         return board1, board2
     
-    def all_legals(self) -> dict[tuple,dict[str,dict[int,tuple]]]:
+    def all_legals(self) -> dict[tuple[tuple[int]],dict[str,dict[int,tuple]]]:
         '''Find all legal moves for all board combinations.\n
         Returns { boards: { direction : { distance : (passive moves, aggro moves) } } }\n
         Where boards are the indice tuples and moves are ending positions'''
@@ -175,4 +181,6 @@ class State:
 if __name__ == '__main__':
     game = State()
     game.boards = [ [ [905,45124], [3,128] ] , [ [2130440,16518] , [2130440,1585473] ] ]
+    game.render()
+    make_rand_move()
     game.render()
