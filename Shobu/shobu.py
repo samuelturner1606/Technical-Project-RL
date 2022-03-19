@@ -1,17 +1,14 @@
 '''
-A bitboard implementation of the board game 'Shōbu'.
+A bitboard implementation of the board game Shōbu.
 '''
-from random import choice
+from random import choice, shuffle
+from time import sleep
 
 DIRECTIONS = {'N':6, 'E':-1, 'S':-6, 'W':1, 'NE':5, 'NW': 7, 'SE': -7, 'SW': -5}
 BITMASK = 0b1111001111001111001111 # bitmask deletes bits that move off the board
-MAP = { # (p,i): (p, ~i), (~p, i)
-    (0,0) : ( (0,1), (1,0) ),
-    (0,1) : ( (0,0), (1,1) ),
-    (1,0) : ( (0,0), (1,1) ),
-    (1,1) : ( (0,1), (1,0) )
-    }
-START_BOARD = [0b1111, 0b1111000000000000000000] # index 1 corresponds to player 1
+COMBOS = (
+    (((0,0),(0,1)), ((0,0),(1,0)), ((0,1),(0,0)), ((0,1),(1,1))),
+    (((1,0),(0,0)), ((1,0),(1,1)), ((1,1),(0,1)), ((1,1),(1,0))) )
 
 def bitshift(bits: int, direction: int, distance: int) -> int:
     shift = direction * distance
@@ -69,18 +66,18 @@ def make_rand_move():
     passives, aggros = all_legals[boards][direction][dist]
     passive = choice(split(passives))
     aggro = choice(split(aggros))
-    game.move(get_board(boards[0]),get_board(boards[1]),passive,aggro,DIRECTIONS[direction],dist)
+    game.make_move(get_board(boards[0]),get_board(boards[1]),passive,aggro,DIRECTIONS[direction],dist)
     return
 
 class State:
     'Object containing all information required to uniquely define a Shōbu game state.'
-    def __init__(self, player: bool = True, side1: list[list[int]] = [START_BOARD, START_BOARD], side2: list[list[int]] = [START_BOARD, START_BOARD]) -> None:
+    def __init__(self, player: bool = True, boards: list[list[list[int]]] = [[[15,3932160], [15,3932160]],[[15,3932160], [15,3932160]]]) -> None:
         self.player = player # player 1 = True, player 2 = False
-        self.boards = [side2, side1] # index 1 corresponds to player 1
+        self.boards = boards # index 1 corresponds to player 1
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
-        print(f'--------{message}')
+        print(f'--------{str(message)}')
         for i in 0,1:
             left = mailbox(self.boards[i][0], i^0)
             right = mailbox(self.boards[i][1], i^1)
@@ -88,45 +85,39 @@ class State:
                 print(left[row]+right[row])
         return
     
-    def is_game_over(self) -> int:
+    def is_terminal(self) -> int:
         '''The first player to lose all their stones on any board loses the game. 
         Return values 1 = player 1 win, -1 = player 2 win and 0 = game not over.'''
-        if not self.boards[0][0][0] or not self.boards[0][1][0]:
-            return 1 # player 1 wins
-        elif not self.boards[1][0][1] or not self.boards[1][1][1]: 
-            return -1 # player 2 wins
+        for side in self.boards:
+            for board in side:
+                if not board[0]:
+                    return 1 # player 1 wins
+                elif not board[1]:
+                    return -1 # player 2 wins
         return 0 # game not over
     
-    def move(self, board1: list[int], board2: list[int], end1: int, end2: int, direction: int, distance: int):
-        'Update the two boards with the legal moves'
+    def make_move(self, board1: list[int], board2: list[int], end1: int, end2: int, direction: int, distance: int) -> None:
+        'Update the two boards with the legal moves. Parameters ending with 1 and 2 refer to passive and aggro moves respectively.'
         # passive move
         start1 = bitshift(end1, -direction, distance)
-        view(board1[self.player], 'before1')
         board1[self.player] ^= (start1 | end1)
-        view(board1[self.player], 'after1')
-        # aggressive move
+        # aggro move
         start2 = bitshift(end2, -direction, distance)
-        view(board2[self.player], 'before2')
         board2[self.player] ^= (start2 | end2)
-        view(board2[self.player], 'after2')
         path = end2 | bitshift(end2, -direction, 1)
-        view(path, 'path')
         collision = path & board2[not self.player]
         if collision: 
-            view(collision, 'collision')
             landing = bitshift(end2, direction, 1)
-            view(board2[not self.player], 'before3')
             board2[not self.player] ^= (collision | landing)
-            view(board2[not self.player], 'after3')
-        return board1, board2
+        return
     
     def all_legals(self) -> dict[tuple[tuple[int]],dict[str,dict[int,tuple]]]:
         '''Find all legal moves for all board combinations.\n
         Returns { boards: { direction : { distance : (passive moves, aggro moves) } } }\n
         Where boards are the indice tuples and moves are ending positions'''
-        b = self.board_moves()
+        b = self.board_legals()
         output = {}
-        for i in False,True:
+        for i in False,True: # passive board (p,i) -> aggro boards (p,~i), (~p,i)
             passive_board = self.boards[self.player][i]
             for j in (self.player, not i), (not self.player, i) :
                 aggro_board = self.boards[j[0]][j[1]]
@@ -144,7 +135,7 @@ class State:
                     output[((self.player,i), j)] = directions
         return output
     
-    def board_moves(self) -> dict[tuple,dict[int,tuple]]:
+    def board_legals(self) -> dict[tuple,dict[int,tuple]]:
         '''Find all legal moves, in all directions, on all boards.\n
         Returns { board : { direction : (passive moves, aggro moves) } }'''
         output = {}
@@ -158,14 +149,14 @@ class State:
         return output
 
     def legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
-        'Find the ending squares of all legal passive moves, for all distances, in a direction, on a given board'
+        'Find the ending squares of all legal passive moves, for all distances, in a direction, on a given board.'
         empty = ~(passive_board[self.player] | passive_board[not self.player])
         passive1 = bitshift(passive_board[self.player], direction, 1) & empty
         passive2 = bitshift(passive1, direction, 1) & empty
         return passive1, passive2
     
     def legal_aggros(self, aggro_board: list[int], direction: int) -> tuple[int]:
-        'Find the ending squares of all legal aggro moves, for all distances, in a direction, on a given board'
+        'Find the ending squares of all legal aggro moves, for all distances, in a direction, on a given board.'
         p2 = aggro_board[self.player]
         p3 = bitshift(p2, direction, 1)
         x2 = p2 | aggro_board[not self.player]
@@ -178,9 +169,48 @@ class State:
         aggro2 = bitshift(p2, direction, 2) & legal_aggro2
         return aggro1, aggro2
 
+    def random_child(self):
+        'Randomly return a legal successor state. Faster than choosing from all legal moves.'
+        boards = self.boards.copy()
+        combos = list(COMBOS[self.player])
+        while combos:
+            shuffle(combos)
+            p, a = combos.pop()
+            p_board = boards[p[0]][p[1]]
+            a_board = boards[a[0]][a[1]]
+            directions = list(DIRECTIONS.values())
+            while directions:
+                shuffle(directions)
+                direc = directions.pop()
+                p1, p2 = self.legal_passives(p_board, direc)
+                a1, a2 = self.legal_aggros(a_board, direc)
+                distances = [1,2]
+                while distances:
+                    shuffle(distances)
+                    dist = distances.pop()
+                    if dist == 1 and p1 and a1:
+                        random_p = choice(split(p1))
+                        random_a = choice(split(a1))
+                        self.make_move(p_board, a_board, random_p, random_a, direc, dist)
+                        print(f'P_board: {p}, A_board: {a}, direction: {direc}, distance: {dist}')
+                        return State(not self.player, boards)
+                    elif dist == 2 and p2 and a2:
+                        random_p = choice(split(p2))
+                        random_a = choice(split(a2))
+                        self.make_move(p_board, a_board, random_p, random_a, direc, dist)
+                        print(f'P_board: {p}, A_board: {a}, direction: {direc}, distance: {dist}')
+                        return State(not self.player, boards)
+        raise RuntimeError('No legal random moves')
+
 if __name__ == '__main__':
     game = State()
-    game.boards = [ [ [905,45124], [3,128] ] , [ [2130440,16518] , [2130440,1585473] ] ]
+    #game.boards = [ [ [905,45124], [3,128] ] , [ [2130440,16518] , [2130440,1585473] ] ]
+    while True:
+        sleep(0.5)
+        game.render(game.player)
+        game = game.random_child()
+        reward = game.is_terminal()
+        if reward:
+            break
     game.render()
-    make_rand_move()
-    game.render()
+    print(f'Game Over: {reward}')
