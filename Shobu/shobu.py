@@ -2,7 +2,6 @@
 A bitboard implementation of the board game Shōbu.
 '''
 from random import choice, shuffle
-from time import sleep
 
 DIRECTIONS = {'N':6, 'E':-1, 'S':-6, 'W':1, 'NE':5, 'NW': 7, 'SE': -7, 'SW': -5}
 BITMASK = 0b1111001111001111001111 # bitmask deletes bits that move off the board
@@ -62,7 +61,6 @@ def make_rand_move():
     boards = choice(list(all_legals))
     direction = choice(list(all_legals[boards]))
     dist = choice(list(all_legals[boards][direction]))
-    print(f'boards:{boards}, direction:{direction}, distance:{dist}')
     passives, aggros = all_legals[boards][direction][dist]
     passive = choice(split(passives))
     aggro = choice(split(aggros))
@@ -192,25 +190,13 @@ class State:
                         random_p = choice(split(p1))
                         random_a = choice(split(a1))
                         self.make_move(p_board, a_board, random_p, random_a, direc, dist)
-                        print(f'P_board: {p}, A_board: {a}, direction: {direc}, distance: {dist}')
                         return State(not self.player, boards)
                     elif dist == 2 and p2 and a2:
                         random_p = choice(split(p2))
                         random_a = choice(split(a2))
                         self.make_move(p_board, a_board, random_p, random_a, direc, dist)
-                        print(f'P_board: {p}, A_board: {a}, direction: {direc}, distance: {dist}')
                         return State(not self.player, boards)
         raise RuntimeError('No legal random moves')
 
 if __name__ == '__main__':
     game = State()
-    #game.boards = [ [ [905,45124], [3,128] ] , [ [2130440,16518] , [2130440,1585473] ] ]
-    while True:
-        sleep(0.5)
-        game.render(game.player)
-        game = game.random_child()
-        reward = game.is_terminal()
-        if reward:
-            break
-    game.render()
-    print(f'Game Over: {reward}')
