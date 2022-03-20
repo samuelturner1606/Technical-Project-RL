@@ -8,6 +8,9 @@ BITMASK = 0b1111001111001111001111 # bitmask deletes bits that move off the boar
 COMBOS = ( # passive board (p,i) -> aggro boards (p,~i), (~p,i)
     (((0,0),(0,1)), ((0,0),(1,0)), ((0,1),(0,0)), ((0,1),(1,1))),
     (((1,0),(0,0)), ((1,0),(1,1)), ((1,1),(0,1)), ((1,1),(1,0))) )
+COMBOS2 = ( # more human readable
+    {'01':((0,0),(0,1)), '02':((0,0),(1,0)), '10':((0,1),(0,0)), '13':((0,1),(1,1))},
+    {'20':((1,0),(0,0)), '23':((1,0),(1,1)), '31':((1,1),(0,1)), '32':((1,1),(1,0))} )
 
 def bitshift(bits: int, direction: int, distance: int) -> int:
     shift = direction * distance
@@ -43,6 +46,12 @@ def mailbox(bitboards: list[int], type: bool) -> list[list[int]]:
             mailbox_2D[row] += str( (bitboards[1] & (1 << n) and 1) + 2 * (bitboards[0] & (1 << n) and 1) )
     return mailbox_2D
 
+def get_choice(choices: list[str], prompt: str = ''):
+    'General user input handling function.'
+    choice = ''
+    while choice not in choices:
+        choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
+    return choice
 
 class State:
     'Object containing all information required to uniquely define a Shōbu game state.'
@@ -142,7 +151,7 @@ class State:
         aggro2 = bitshift(p2, direction, 2) & legal_aggro2
         return aggro1, aggro2
 
-    def random_child(self):
+    def random_child(self) -> object:
         'Randomly return a legal successor state. Faster than choosing from all legal moves.'
         boards = self.boards.copy()
         combos = list(COMBOS[self.player])
@@ -172,8 +181,37 @@ class State:
                         self.make_move(p_board, a_board, random_p, random_a, direc, dist)
                         return State(not self.player, boards)
         raise RuntimeError('No legal random moves')
-
+    
+    def human_turn(self) -> None:
+        'Ask the user for a legal move and update the state with it.'
+        while True:
+            combos = COMBOS2[self.player]
+            combo = combos[get_choice(list(combos), 'passive and aggro board combo')]
+            p_board = self.boards[combo[0][0]][combo[0][1]]
+            a_board = self.boards[combo[1][0]][combo[1][1]]
+            direc = DIRECTIONS[get_choice(list(DIRECTIONS), 'direction')]
+            p1, p2 = self.legal_passives(p_board, direc)
+            a1, a2 = self.legal_aggros(a_board, direc)
+            distances = ['1','2']
+            if not (p1 and a1):
+                print('No legal moves for that direction and board combo!')
+            else:
+                if not (p2 and a2):
+                    distances.pop()
+                dist = int(get_choice(distances, 'distance'))
+                if dist == 1:
+                    end1 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(p1)],'passive move ending square'))
+                    end2 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(a1)],'aggressive move ending square'))
+                    self.make_move(p_board, a_board, end1, end2, direc, dist)
+                    break
+                else:
+                    end1 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(p2)],'passive move ending square'))
+                    end2 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(a2)],'aggressive move ending square'))
+                    self.make_move(p_board, a_board, end1, end2, direc, dist)
+                    break     
+        self.player = not self.player
+        return
+    
 if __name__ == '__main__':
     game = State()
-    game.all_legals()
-    pass
+    game.render()
