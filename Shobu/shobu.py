@@ -114,6 +114,8 @@ class State:
                     directions[key] = distances
             if directions:
                 output[(p, a)] = directions
+        if not output:
+            raise RuntimeError('No legal moves')
         return output
     
     def board_legals(self) -> dict[tuple,dict[int,tuple]]:
