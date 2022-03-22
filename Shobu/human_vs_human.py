@@ -5,7 +5,7 @@ if __name__ == '__main__':
     game = s.State()
     while True:
         game.render(f" Player {2 - game.player}'s turn")
-        game.human_turn()
+        game.human_ply()
         reward = game.is_terminal()
         if reward:
             break

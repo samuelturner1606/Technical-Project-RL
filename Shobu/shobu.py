@@ -119,7 +119,7 @@ class State:
             if directions:
                 output[(p, a)] = directions
         if not output: # if no legal moves
-            print('No legal moves')
+            self.render(' No legal moves')
             if self.player == 1: 
                 self.reward = -1 # player 1 loses since they cannot move
             else:
@@ -160,7 +160,7 @@ class State:
         aggro2 = bitshift(p2, direction, 2) & legal_aggro2
         return aggro1, aggro2
 
-    def random_child(self) -> object:
+    def random_ply(self) -> object:
         'Randomly return a legal successor state. Faster than choosing from all legal moves.'
         boards = self.boards.copy()
         combos = list(COMBOS[self.player])
@@ -189,14 +189,14 @@ class State:
                         random_a = choice(split(a2))
                         self.make_move(p_board, a_board, random_p, random_a, direc, dist)
                         return State(not self.player, boards)
-        print('No legal random moves')
+        self.render(' No legal random moves')
         if self.player == 1: 
             self.reward = -1 # player 1 loses since they cannot move
         else:
             self.reward = 1
         return
     
-    def human_turn(self) -> None:
+    def human_ply(self) -> None:
         'Ask the user for a legal move and update the state with it.'
         legals = self.all_legals()
         if legals:
@@ -217,5 +217,5 @@ if __name__ == '__main__':
     game = State(boards=[[[4,266240],[794624,8]],[[256,526],[8328,786432]]])
     game.render()
     game.all_legals()
-    game.random_child()
+    game.random_ply()
     pass

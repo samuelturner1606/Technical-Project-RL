@@ -6,9 +6,9 @@ if __name__ == '__main__':
     while True:
         game.render(f" Player {2 - game.player}'s turn")
         if game.player == 1:
-            game.human_turn()
+            game.human_ply()
         else:
-            game = game.random_child()
+            game = game.random_ply()
         reward = game.is_terminal()
         if reward:
             break
