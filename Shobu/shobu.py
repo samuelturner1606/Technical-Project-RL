@@ -1,14 +1,14 @@
 '''
-A bitboard implementation of the board game Shōbu.
+A fast and lightweight bitboard board game engine implementation of Shōbu.
 '''
 from random import choice, shuffle
 
 DIRECTIONS = {'N':6, 'E':-1, 'S':-6, 'W':1, 'NE':5, 'NW':7, 'SE':-7, 'SW':-5}
 BITMASK = 0b1111001111001111001111 # bitmask deletes bits that move off the board
-COMBOS: tuple[tuple[tuple[tuple[int]]]] = ( # passive board (p,i) -> aggro boards (p,~i), (~p,i)
+COMBOS: tuple[tuple[tuple[tuple[int]]]] = ( # board indices: passive board (p,i) -> aggro boards (p,~i) or (~p,i)
     (((0,0),(0,1)), ((0,0),(1,0)), ((0,1),(0,0)), ((0,1),(1,1))),
     (((1,0),(0,0)), ((1,0),(1,1)), ((1,1),(0,1)), ((1,1),(1,0))) )
-COMBOS2: tuple[dict[str,tuple[tuple[int]]]] = ( # more human readable mapping
+COMBOS2: tuple[dict[str,tuple[tuple[int]]]] = ( # more user friendly mapping
     {'01':((0,0),(0,1)), '02':((0,0),(1,0)), '10':((0,1),(0,0)), '13':((0,1),(1,1))},
     {'20':((1,0),(0,0)), '23':((1,0),(1,1)), '31':((1,1),(0,1)), '32':((1,1),(1,0))} )
 
@@ -85,7 +85,7 @@ class State:
         return self.reward 
     
     def make_move(self, passive_board: list[int], aggro_board: list[int], passive_end: int, aggro_end: int, direction: int, distance: int) -> None:
-        'Update the two boards with the legal passive and aggro moves.'
+        'Update the two boards inplace with the legal passive and aggro moves.'
         passive_start = bitshift(passive_end, -direction, distance)
         passive_board[self.player] ^= (passive_start | passive_end)
         aggro_start = bitshift(aggro_end, -direction, distance)
@@ -212,7 +212,20 @@ class State:
             self.make_move(p_board, a_board, end1, end2, DIRECTIONS[direc], dist)
             self.player = not self.player
         return
-    
+
+def count_actions(state: State):
+    'Count the number of legal actions in the current state.'
+    count = 0
+    legals = state.all_legals()
+    for combo in legals:
+        for direction in legals[combo]:
+            for distance in legals[combo][direction]:
+                p, a = legals[combo][direction][distance]
+                p_count = len(split(p))
+                a_count = len(split(a))
+                count += (p_count * a_count)
+    return count
+
 if __name__ == '__main__':
     game = State(boards=[[[4,266240],[794624,8]],[[256,526],[8328,786432]]])
     game.render()
