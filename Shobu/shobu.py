@@ -5,10 +5,10 @@ from random import choice, shuffle
 
 DIRECTIONS = {'N':6, 'E':-1, 'S':-6, 'W':1, 'NE':5, 'NW':7, 'SE':-7, 'SW':-5}
 BITMASK = 0b1111001111001111001111 # bitmask deletes bits that move off the board
-COMBOS = ( # passive board (p,i) -> aggro boards (p,~i), (~p,i)
+COMBOS: tuple[tuple[tuple[tuple[int]]]] = ( # passive board (p,i) -> aggro boards (p,~i), (~p,i)
     (((0,0),(0,1)), ((0,0),(1,0)), ((0,1),(0,0)), ((0,1),(1,1))),
     (((1,0),(0,0)), ((1,0),(1,1)), ((1,1),(0,1)), ((1,1),(1,0))) )
-COMBOS2 = ( # more human readable
+COMBOS2: tuple[dict[str,tuple[tuple[int]]]] = ( # more human readable mapping
     {'01':((0,0),(0,1)), '02':((0,0),(1,0)), '10':((0,1),(0,0)), '13':((0,1),(1,1))},
     {'20':((1,0),(0,0)), '23':((1,0),(1,1)), '31':((1,1),(0,1)), '32':((1,1),(1,0))} )
 
@@ -58,6 +58,7 @@ class State:
     def __init__(self, player: bool = True, boards: list[list[list[int]]] = [[[15,3932160], [15,3932160]],[[15,3932160], [15,3932160]]]) -> None:
         self.player = player # player 1 = True, player 2 = False
         self.boards = boards # index 1 corresponds to player 1
+        self.reward: int = 0
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
@@ -72,13 +73,16 @@ class State:
     def is_terminal(self) -> int:
         '''The first player to lose all their stones on any board loses the game. 
         Return values 1 = player 1 win, -1 = player 2 win and 0 = game not over.'''
-        for side in self.boards:
-            for board in side:
-                if not board[0]:
-                    return 1 # player 1 wins
-                elif not board[1]:
-                    return -1 # player 2 wins
-        return 0 # game not over
+        if not self.reward: # if not already terminal from there being no legal moves
+            for side in self.boards:
+                for board in side:
+                    if not board[0]:
+                        self.reward = 1 # player 1 wins
+                        break 
+                    elif not board[1]:
+                        self.reward = -1 # player 2 wins
+                        break 
+        return self.reward 
     
     def make_move(self, passive_board: list[int], aggro_board: list[int], passive_end: int, aggro_end: int, direction: int, distance: int) -> None:
         'Update the two boards with the legal passive and aggro moves.'
@@ -114,8 +118,12 @@ class State:
                     directions[key] = distances
             if directions:
                 output[(p, a)] = directions
-        if not output:
-            raise RuntimeError('No legal moves')
+        if not output: # if no legal moves
+            print('No legal moves')
+            if self.player == 1: 
+                self.reward = -1 # player 1 loses since they cannot move
+            else:
+                self.reward = 1
         return output
     
     def board_legals(self) -> dict[tuple,dict[int,tuple]]:
@@ -128,8 +136,7 @@ class State:
                     temp = {}
                     for key, d in DIRECTIONS.items():
                         temp[key] = (self.legal_passives(board,d), self.legal_aggros(board,d))
-                    if temp:
-                        output[tuple(board)] = temp
+                    output[tuple(board)] = temp
         return output
 
     def legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
@@ -182,38 +189,32 @@ class State:
                         random_a = choice(split(a2))
                         self.make_move(p_board, a_board, random_p, random_a, direc, dist)
                         return State(not self.player, boards)
-        raise RuntimeError('No legal random moves')
+        print('No legal random moves')
+        if self.player == 1: 
+            self.reward = -1 # player 1 loses since they cannot move
+        else:
+            self.reward = 1
+        return
     
     def human_turn(self) -> None:
         'Ask the user for a legal move and update the state with it.'
-        while True:
+        legals = self.all_legals()
+        if legals:
             combos = COMBOS2[self.player]
             combo = combos[get_choice(list(combos), 'passive and aggro board combo')]
             p_board = self.boards[combo[0][0]][combo[0][1]]
             a_board = self.boards[combo[1][0]][combo[1][1]]
-            direc = DIRECTIONS[get_choice(list(DIRECTIONS), 'direction')]
-            p1, p2 = self.legal_passives(p_board, direc)
-            a1, a2 = self.legal_aggros(a_board, direc)
-            distances = ['1','2']
-            if not (p1 and a1):
-                print('No legal moves for that direction and board combo!')
-            else:
-                if not (p2 and a2):
-                    distances.pop()
-                dist = int(get_choice(distances, 'distance'))
-                if dist == 1:
-                    end1 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(p1)],'passive move ending square'))
-                    end2 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(a1)],'aggressive move ending square'))
-                    self.make_move(p_board, a_board, end1, end2, direc, dist)
-                    break
-                else:
-                    end1 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(p2)],'passive move ending square'))
-                    end2 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(a2)],'aggressive move ending square'))
-                    self.make_move(p_board, a_board, end1, end2, direc, dist)
-                    break     
-        self.player = not self.player
+            direc = get_choice(list(legals[combo]), 'direction')
+            dist = int(get_choice([ str(i) for i in list(legals[combo][direc]) ], 'distance'))
+            passives, aggros = legals[combo][direc][dist]
+            end1 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(passives)],'passive move ending square'))
+            end2 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(aggros)],'aggressive move ending square'))
+            self.make_move(p_board, a_board, end1, end2, DIRECTIONS[direc], dist)
+            self.player = not self.player
         return
     
 if __name__ == '__main__':
-    game = State()
+    game = State(boards=[[[0,0],[0,0]],[[0,0],[0,0]]])
     game.render()
+    game.all_legals()
+    pass
