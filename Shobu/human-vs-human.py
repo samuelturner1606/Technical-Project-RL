@@ -6,8 +6,7 @@ if __name__ == '__main__':
     while True:
         game.render(f" Player {2 - game.player}'s turn")
         game.human_ply()
-        reward = game.is_terminal()
-        if reward:
+        if game.is_terminal():
             break
     game.render()
-    print(f'Player {reward % 3} won')
+    print(f'Player {game.reward % 3} won')

@@ -8,9 +8,8 @@ if __name__ == '__main__':
         if game.player == 1:
             game.human_ply()
         else:
-            game = game.random_ply()
-        reward = game.is_terminal()
-        if reward:
+            game.random_ply()
+        if game.is_terminal():
             break
     game.render()
-    print(f'Player {reward % 3} won')
+    print(f'Player {game.reward % 3} won')

@@ -26,10 +26,10 @@ class Small_state(s.State):
 
     def random_ply(self):
         'Randomly return a legal successor state. Faster than choosing from all legal moves.'
-        boards = self.boards.copy()
+        #boards = self.boards.copy()
         p, a = ALT_COMBOS[self.player]
-        p_board = boards[p[0]][p[1]]
-        a_board = boards[a[0]][a[1]]
+        p_board = self.boards[p[0]][p[1]]
+        a_board = self.boards[a[0]][a[1]]
         directions = list(s.DIRECTIONS.values())
         while directions:
             shuffle(directions)
@@ -44,17 +44,19 @@ class Small_state(s.State):
                     random_p = choice(s.split(p1))
                     random_a = choice(s.split(a1))
                     self.make_move(p_board, a_board, random_p, random_a, direc, dist)
-                    return Small_state(player=not self.player, boards=boards)
+                    return
                 elif dist == 2 and p2 and a2:
                     random_p = choice(s.split(p2))
                     random_a = choice(s.split(a2))
                     self.make_move(p_board, a_board, random_p, random_a, direc, dist)
-                    return Small_state(player=not self.player, boards=boards)
+                    return
         self.render('No legal random moves')
+        self.done = True
         if self.player == 1: 
             self.reward = -1 # player 1 loses since they cannot move
         else:
             self.reward = 1
+        self.player=not self.player
         return
     
     def human_ply(self) -> None:
@@ -93,6 +95,7 @@ class Small_state(s.State):
                 directions[key] = distances
         if not directions: # if no legal moves
             self.render('No legal moves')
+            self.done = True
             if self.player == 1: 
                 self.reward = -1 # player 1 loses since they cannot move
             else:
@@ -119,12 +122,11 @@ if __name__ == '__main__':
     while True:
         #sleep(0.1)
         game.render()
-        game = game.random_ply()
-        reward = game.is_terminal()
-        if reward:
+        game.random_ply()
+        if game.is_terminal():
             break
     game.render()
-    print(f'Player {reward % 3} won')
+    print(f'Player {game.reward % 3} won and in {game.plies} plies.')
 
     print('human vs human')
     game = Small_state([[[15,3932160]],[[15,3932160]]])
@@ -132,8 +134,7 @@ if __name__ == '__main__':
         sleep(0.1)
         game.render()
         game.human_ply()
-        reward = game.is_terminal()
-        if reward:
+        if game.is_terminal():
             break
     game.render()
-    print(f'Player {reward % 3} won')
+    print(f'Player {game.reward % 3} won and in {game.plies} plies.')

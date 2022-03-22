@@ -59,6 +59,8 @@ class State:
         self.player = player # player 1 = True, player 2 = False
         self.boards = boards # index 1 corresponds to player 1
         self.reward: int = 0
+        self.plies: int = 0
+        self.done: bool = False
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
@@ -70,19 +72,26 @@ class State:
                 print(left[row]+right[row])
         return
     
-    def is_terminal(self) -> int:
+    def is_terminal(self) -> bool:
         '''The first player to lose all their stones on any board loses the game. 
-        Return values 1 = player 1 win, -1 = player 2 win and 0 = game not over.'''
-        if not self.reward: # if not already terminal from there being no legal moves
+        Reward values 1 = player 1 win, -1 = player 2 win and 0 = game not over.
+        Returns self.done'''
+        if self.plies >= 200: # Max game length avoids theoretical stalemates
+            self.done = True
+            self.reward = 0
+            print('Max game length reached')
+        elif not self.done: # if not already terminal from there being no legal moves or max game length
             for side in self.boards:
                 for board in side:
                     if not board[0]:
+                        self.done = True
                         self.reward = 1 # player 1 wins
                         break 
                     elif not board[1]:
+                        self.done = True
                         self.reward = -1 # player 2 wins
                         break 
-        return self.reward 
+        return self.done 
     
     def make_move(self, passive_board: list[int], aggro_board: list[int], passive_end: int, aggro_end: int, direction: int, distance: int) -> None:
         'Update the two boards inplace with the legal passive and aggro moves.'
@@ -95,6 +104,7 @@ class State:
         if collision: 
             landing = bitshift(aggro_end, direction, 1)
             aggro_board[not self.player] ^= (collision | landing)
+        self.plies += 1
         return
     
     def all_legals(self) -> dict[tuple[tuple[int]],dict[str,dict[int,tuple]]]:
@@ -120,7 +130,9 @@ class State:
                 output[(p, a)] = directions
         if not output: # if no legal moves
             self.render('No legal moves')
+            self.done = True
             if self.player == 1: 
+                
                 self.reward = -1 # player 1 loses since they cannot move
             else:
                 self.reward = 1
@@ -160,15 +172,15 @@ class State:
         aggro2 = bitshift(p2, direction, 2) & legal_aggro2
         return aggro1, aggro2
 
-    def random_ply(self):
-        'Randomly return a legal successor state. Faster than choosing from all legal moves.'
-        boards = self.boards.copy()
+    def random_ply(self) -> None:
+        'Randomly play a legal move. Faster than choosing from all legal moves.'
+        #boards = self.boards.copy()
         combos = list(COMBOS[self.player])
         while combos:
             shuffle(combos)
             p, a = combos.pop()
-            p_board = boards[p[0]][p[1]]
-            a_board = boards[a[0]][a[1]]
+            p_board = self.boards[p[0]][p[1]]
+            a_board = self.boards[a[0]][a[1]]
             directions = list(DIRECTIONS.values())
             while directions:
                 shuffle(directions)
@@ -183,17 +195,19 @@ class State:
                         random_p = choice(split(p1))
                         random_a = choice(split(a1))
                         self.make_move(p_board, a_board, random_p, random_a, direc, dist)
-                        return State(not self.player, boards)
+                        return
                     elif dist == 2 and p2 and a2:
                         random_p = choice(split(p2))
                         random_a = choice(split(a2))
                         self.make_move(p_board, a_board, random_p, random_a, direc, dist)
-                        return State(not self.player, boards)
+                        return
         self.render('No legal random moves')
+        self.done = True
         if self.player == 1: 
             self.reward = -1 # player 1 loses since they cannot move
         else:
             self.reward = 1
+        self.player = not self.player
         return
     
     def human_ply(self) -> None:

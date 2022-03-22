@@ -9,12 +9,15 @@ if __name__ == '__main__':
         sleep(0.1)
         game.render()
         num_actions.append(s.count_actions(game))
-        game = game.random_ply()
-        reward = game.is_terminal()
-        if reward:
+        game.random_ply()
+        if game.is_terminal():
             break
     game.render()
-    print(f'Player {reward % 3} won')
+    print(f'Player {game.reward % 3} won')
+    print(f'Game length: {game.plies}')
+    print(f'Min number of actions: {min(num_actions)}')
+    print(f'Max number of actions: {max(num_actions)}')
+    print(f'Mean number of actions: {sum(num_actions)/len(num_actions)}')
 
 
 
