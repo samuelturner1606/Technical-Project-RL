@@ -99,9 +99,23 @@ class Small_state(s.State):
                 self.reward = 1
         return directions
 
+def count_actions(state: Small_state):
+    'Count the number of legal actions in the current state.'
+    count = 0
+    legals = state.all_legals()
+    for direction in legals:
+        for distance in legals[direction]:
+            p, a = legals[direction][distance]
+            p_count = len(s.split(p))
+            a_count = len(s.split(a))
+            count += (p_count * a_count)
+    return count
+
+
 if __name__ == '__main__':
     print('random vs random:')
     game = Small_state([[[15,3932160]],[[15,3932160]]])
+    print(f'Number of starting action: {count_actions(game)}')
     while True:
         #sleep(0.1)
         game.render()
@@ -113,13 +127,13 @@ if __name__ == '__main__':
     print(f'Player {reward % 3} won')
 
     print('human vs human')
-    game2 = Small_state([[[15,3932160]],[[15,3932160]]])
+    game = Small_state([[[15,3932160]],[[15,3932160]]])
     while True:
         sleep(0.1)
-        game2.render()
-        game2.human_ply()
-        reward = game2.is_terminal()
+        game.render()
+        game.human_ply()
+        reward = game.is_terminal()
         if reward:
             break
-    game2.render()
+    game.render()
     print(f'Player {reward % 3} won')
