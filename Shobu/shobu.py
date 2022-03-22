@@ -62,7 +62,7 @@ class State:
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
-        print(f'--------{str(message)}')
+        print(f'-------- {str(message)}')
         for i in 0,1:
             left = mailbox(self.boards[i][0], i^0)
             right = mailbox(self.boards[i][1], i^1)
@@ -103,7 +103,7 @@ class State:
         Where boards are the indice tuples and moves are ending positions'''
         b = self.board_legals()
         output = {}
-        for p, a in list(COMBOS[self.player]):
+        for p, a in COMBOS[self.player]:
             passive_board = self.boards[p[0]][p[1]]
             aggro_board = self.boards[a[0]][a[1]]
             directions = {}
@@ -119,7 +119,7 @@ class State:
             if directions:
                 output[(p, a)] = directions
         if not output: # if no legal moves
-            self.render(' No legal moves')
+            self.render('No legal moves')
             if self.player == 1: 
                 self.reward = -1 # player 1 loses since they cannot move
             else:
@@ -160,7 +160,7 @@ class State:
         aggro2 = bitshift(p2, direction, 2) & legal_aggro2
         return aggro1, aggro2
 
-    def random_ply(self) -> object:
+    def random_ply(self):
         'Randomly return a legal successor state. Faster than choosing from all legal moves.'
         boards = self.boards.copy()
         combos = list(COMBOS[self.player])
@@ -189,7 +189,7 @@ class State:
                         random_a = choice(split(a2))
                         self.make_move(p_board, a_board, random_p, random_a, direc, dist)
                         return State(not self.player, boards)
-        self.render(' No legal random moves')
+        self.render('No legal random moves')
         if self.player == 1: 
             self.reward = -1 # player 1 loses since they cannot move
         else:
