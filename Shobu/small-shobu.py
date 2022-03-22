@@ -11,8 +11,9 @@ ALT_COMBOS: tuple[tuple[tuple[tuple[int]]]] = ( # board indices
 
 class Small_state(s.State):
     'Object containing all information required to uniquely define a Shōbu game state.'
-    def __init__(self, boards, player: bool = True) -> None:
-        super().__init__(player, boards)
+    def __init__(self) -> None:
+        super().__init__()
+        self.boards = [[[15,3932160]],[[15,3932160]]]
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
@@ -117,7 +118,7 @@ def count_actions(state: Small_state):
 
 if __name__ == '__main__':
     print('random vs random:')
-    game = Small_state([[[15,3932160]],[[15,3932160]]])
+    game = Small_state()
     print(f'Number of starting action: {count_actions(game)}')
     while True:
         #sleep(0.1)
@@ -126,10 +127,10 @@ if __name__ == '__main__':
         if game.is_terminal():
             break
     game.render()
-    print(f'Player {game.reward % 3} won and in {game.plies} plies.')
+    print(f'Player {game.reward % 3} won in {game.plies} plies.')
 
     print('human vs human')
-    game = Small_state([[[15,3932160]],[[15,3932160]]])
+    game = Small_state()
     while True:
         sleep(0.1)
         game.render()
@@ -137,4 +138,4 @@ if __name__ == '__main__':
         if game.is_terminal():
             break
     game.render()
-    print(f'Player {game.reward % 3} won and in {game.plies} plies.')
+    print(f'Player {game.reward % 3} won in {game.plies} plies.')

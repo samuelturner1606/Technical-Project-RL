@@ -55,12 +55,12 @@ def get_choice(choices: list[str], prompt: str = ''):
 
 class State:
     'Object containing all information required to uniquely define a Shōbu game state.'
-    def __init__(self, player: bool = True, boards: list[list[list[int]]] = [[[15,3932160], [15,3932160]],[[15,3932160], [15,3932160]]]) -> None:
-        self.player = player # player 1 = True, player 2 = False
-        self.boards = boards # index 1 corresponds to player 1
-        self.reward: int = 0
-        self.plies: int = 0
-        self.done: bool = False
+    def __init__(self) -> None:
+        self.player:bool = True # player 1 = True, player 2 = False
+        self.done:bool = False
+        self.reward:int = 0
+        self.plies:int = 0
+        self.boards:list[list[list[int]]] = [[[15,3932160], [15,3932160]],[[15,3932160], [15,3932160]]] # index 1 corresponds to player 1
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
@@ -241,8 +241,6 @@ def count_actions(state: State):
     return count
 
 if __name__ == '__main__':
-    game = State(boards=[[[4,266240],[794624,8]],[[256,526],[8328,786432]]])
+    game = State()
     game.render()
-    game.all_legals()
-    game.random_ply()
     pass
