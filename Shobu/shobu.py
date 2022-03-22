@@ -214,7 +214,8 @@ class State:
         return
     
 if __name__ == '__main__':
-    game = State(boards=[[[0,0],[0,0]],[[0,0],[0,0]]])
+    game = State(boards=[[[4,266240],[794624,8]],[[256,526],[8328,786432]]])
     game.render()
     game.all_legals()
+    game.random_child()
     pass
