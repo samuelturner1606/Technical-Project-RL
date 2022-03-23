@@ -57,7 +57,7 @@ class Small_state(s.State):
             self.reward = -1 # player 1 loses since they cannot move
         else:
             self.reward = 1
-        self.player=not self.player
+        self.player = not self.player
         return
     
     def human_ply(self) -> None:
@@ -73,7 +73,6 @@ class Small_state(s.State):
             end1 = 1 << int(s.get_choice([str(n.bit_length()-1) for n in s.split(passives)],'passive move ending square'))
             end2 = 1 << int(s.get_choice([str(n.bit_length()-1) for n in s.split(aggros)],'aggressive move ending square'))
             self.make_move(p_board, a_board, end1, end2, s.DIRECTIONS[direc], dist)
-            self.player = not self.player
         return
     
     def all_legals(self) -> dict[tuple[tuple[int]],dict[str,dict[int,tuple]]]:

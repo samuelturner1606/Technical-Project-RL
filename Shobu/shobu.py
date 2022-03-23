@@ -76,10 +76,10 @@ class State:
         '''The first player to lose all their stones on any board loses the game. 
         Reward values 1 = player 1 win, -1 = player 2 win and 0 = game not over.
         Returns self.done'''
-        if self.plies >= 200: # Max game length avoids theoretical stalemates
+        if self.plies >= 1000: # Max game length avoids theoretical stalemates
             self.done = True
             self.reward = 0
-            print('Max game length reached')
+            self.render('Max game length reached')
         elif not self.done: # if not already terminal from there being no legal moves or max game length
             for side in self.boards:
                 for board in side:
@@ -105,6 +105,7 @@ class State:
             landing = bitshift(aggro_end, direction, 1)
             aggro_board[not self.player] ^= (collision | landing)
         self.plies += 1
+        self.player = not self.player
         return
     
     def all_legals(self) -> dict[tuple[tuple[int]],dict[str,dict[int,tuple]]]:
