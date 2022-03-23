@@ -243,5 +243,7 @@ def count_actions(state: State):
 
 if __name__ == '__main__':
     game = State()
+    game.boards = [[15,565376],[15,565376]],[[15,565376],[15,565376]]
     game.render()
+    print(count_actions(game))
     pass
