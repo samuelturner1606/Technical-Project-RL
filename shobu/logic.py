@@ -2,65 +2,25 @@
 A fast and lightweight bitboard board game engine implementation of Shōbu.
 '''
 from random import choice, shuffle
+from collections import deque
+from dataclasses import dataclass
 
 DIRECTIONS = {'N':6, 'E':-1, 'S':-6, 'W':1, 'NE':5, 'NW':7, 'SE':-7, 'SW':-5}
 BITMASK = 0b1111001111001111001111 # bitmask deletes bits that move off the board
-COMBOS: tuple[tuple[tuple[tuple[int]]]] = ( # board indices: passive board (p,i) -> aggro boards (p,~i) or (~p,i)
-    (((0,0),(0,1)), ((0,0),(1,0)), ((0,1),(0,0)), ((0,1),(1,1))),
-    (((1,0),(0,0)), ((1,0),(1,1)), ((1,1),(0,1)), ((1,1),(1,0))) )
-COMBOS2: tuple[dict[str,tuple[tuple[int]]]] = ( # more user friendly mapping
+COMBOS:tuple[dict[str,tuple[tuple[int]]]] = ( # board indices: passive board (p,i) -> aggro boards (p,~i) or (~p,i)
     {'01':((0,0),(0,1)), '02':((0,0),(1,0)), '10':((0,1),(0,0)), '13':((0,1),(1,1))},
-    {'20':((1,0),(0,0)), '23':((1,0),(1,1)), '31':((1,1),(0,1)), '32':((1,1),(1,0))} )
+    {'20':((1,0),(0,0)), '23':((1,0),(1,1)), '31':((1,1),(0,1)), '32':((1,1),(1,0))} 
+)
+@dataclass
+class Board:
+    b1: int
+    b2: int
 
-def bitshift(bits: int, direction: int, distance: int) -> int:
-    shift = direction * distance
-    if shift > 0:
-        return (bits >> shift) & BITMASK
-    else:
-        return (bits << -shift) & BITMASK
-
-def split(legal_moves: int) -> list[int]:
-    'Split `legal moves` into invidual moves by the on-bits.'
-    seperate_moves = []
-    while legal_moves:
-        seperate_moves.append(legal_moves & -legal_moves) # get least significant on-bit
-        legal_moves &= legal_moves-1 # remove least significant on-bit
-    return seperate_moves
-
-def view(bits: int, message: str = '') -> None:
-    'For debugging.'
-    mailbox = [ bits & (1 << n) and 1  for n in range(24) ]
-    mailbox_2D = [ mailbox[ 6*row : 6*row+6 ] for row in range(4) ]
-    print(*mailbox_2D, sep='\n', end=f'\n{message}\n\n')
-    return
-
-def mailbox(bitboards: list[int], type: bool) -> list[list[int]]:
-    'Transform the bitboards into a 2D mailbox representation. Type refers to whether the board is light = 0 or dark = 1.'
-    if type:
-        colour = '\033[34m' # blue
-    else:
-        colour = '\033[39m' # white
-    mailbox_2D = 4 * [colour]
-    for row in range(4):
-        for n in range(6*row, 6*row+4):
-            mailbox_2D[row] += str( (bitboards[1] & (1 << n) and 1) + 2 * (bitboards[0] & (1 << n) and 1) )
-    return mailbox_2D
-
-def get_choice(choices: list[str], prompt: str = ''):
-    'General user input handling function.'
-    choice = ''
-    while choice not in choices:
-        choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
-    return choice
-
+@dataclass
 class State:
-    'Object containing all information required to uniquely define a Shōbu game state.'
-    def __init__(self) -> None:
-        self.player:bool = True # player 1 = True, player 2 = False
-        self.done:bool = False
-        self.reward:int = 0
-        self.plies:int = 0
-        self.boards:list[list[list[int]]] = [[[15,3932160], [15,3932160]],[[15,3932160], [15,3932160]]] # index 1 corresponds to player 1
+    'Uniquely defines a Shōbu game state.'
+    
+    boards:list[list[list[int]]] = [[[15,3932160], [15,3932160]],[[15,3932160], [15,3932160]]] # index 1 corresponds to player 1
 
     def render(self, message: str = '') -> None:
         'Print the current game state.'
@@ -152,14 +112,14 @@ class State:
                     output[tuple(board)] = temp
         return output
 
-    def legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
+    def _legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
         'Find the ending squares of all legal passive moves, for all distances, in a direction, on a given board.'
         empty = ~(passive_board[self.player] | passive_board[not self.player])
         passive1 = bitshift(passive_board[self.player], direction, 1) & empty
         passive2 = bitshift(passive1, direction, 1) & empty
         return passive1, passive2
     
-    def legal_aggros(self, aggro_board: list[int], direction: int) -> tuple[int]:
+    def _legal_aggros(self, aggro_board: list[int], direction: int) -> tuple[int]:
         'Find the ending squares of all legal aggro moves, for all distances, in a direction, on a given board.'
         p2 = aggro_board[self.player]
         p3 = bitshift(p2, direction, 1)
@@ -228,6 +188,52 @@ class State:
             self.player = not self.player
         return
 
+    @staticmethod
+    def _bitshift(bits: int, direction: int, distance: int) -> int:
+        shift = direction * distance
+        if shift > 0:
+            return (bits >> shift) & BITMASK
+        else:
+            return (bits << -shift) & BITMASK
+
+    @staticmethod
+    def _split(legal_moves: int) -> list[int]:
+        'Split `legal moves` into invidual moves by the on-bits.'
+        seperate_moves = []
+        while legal_moves:
+            seperate_moves.append(legal_moves & -legal_moves) # get least significant on-bit
+            legal_moves &= legal_moves-1 # remove least significant on-bit
+        return seperate_moves
+
+    @staticmethod
+    def _view(bits: int, message: str = '') -> None:
+        'For debugging.'
+        mailbox = [ bits & (1 << n) and 1  for n in range(24) ]
+        mailbox_2D = [ mailbox[ 6*row : 6*row+6 ] for row in range(4) ]
+        print(*mailbox_2D, sep='\n', end=f'\n{message}\n\n')
+        return
+
+    @staticmethod
+    def _mailbox(bitboards: list[int], type: bool) -> list[list[int]]:
+        'Transform the bitboards into a 2D mailbox representation. Type refers to whether the board is light = 0 or dark = 1.'
+        if type:
+            colour = '\033[34m' # blue
+        else:
+            colour = '\033[39m' # white
+        mailbox_2D = 4 * [colour]
+        for row in range(4):
+            for n in range(6*row, 6*row+4):
+                mailbox_2D[row] += str( (bitboards[1] & (1 << n) and 1) + 2 * (bitboards[0] & (1 << n) and 1) )
+        return mailbox_2D
+
+    @staticmethod
+    def _get_choice(choices: list[str], prompt: str = ''):
+        'General user input handling function.'
+        choice = ''
+        while choice not in choices:
+            choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
+        return choice
+
 def count_actions(state: State):
     'Count the number of legal actions in the current state.'
     count = 0
@@ -241,9 +247,17 @@ def count_actions(state: State):
                 count += (p_count * a_count)
     return count
 
+class Game:
+    'Shōbu game.'
+    def __init__(self) -> None:
+        self.plies:int = 0
+        self.done:bool = False
+        self.path:deque = deque()
+        reward:int = 0
+        player:bool = True # player 1 = True, player 2 = False
+        pass
+
 if __name__ == '__main__':
     game = State()
     game.boards = [[15,565376],[15,565376]],[[15,565376],[15,565376]]
     game.render()
-    print(count_actions(game))
-    pass

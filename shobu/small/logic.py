@@ -2,15 +2,15 @@
 A small version of the board game Shōbu played on only two boards.
 '''
 from time import sleep
-import shobu as s
 from random import choice, shuffle
+import shobu.logic as s
 
 ALT_COMBOS: tuple[tuple[tuple[tuple[int]]]] = ( # board indices
     (((0,0),(1,0))),
     (((1,0),(0,0))) )
 
-class Small_state(s.State):
-    'Object containing all information required to uniquely define a Shōbu game state.'
+class Small(s.State):
+    'Small Shōbu game state.'
     def __init__(self) -> None:
         super().__init__()
         self.boards = [[[15,3932160]],[[15,3932160]]]
@@ -102,7 +102,7 @@ class Small_state(s.State):
                 self.reward = 1
         return directions
 
-def count_actions(state: Small_state):
+def count_actions(state: Small):
     'Count the number of legal actions in the current state.'
     count = 0
     legals = state.all_legals()
@@ -117,7 +117,7 @@ def count_actions(state: Small_state):
 
 if __name__ == '__main__':
     print('random vs random:')
-    game = Small_state()
+    game = Small()
     print(f'Number of starting action: {count_actions(game)}')
     while True:
         #sleep(0.1)
@@ -128,6 +128,7 @@ if __name__ == '__main__':
     game.render()
     print(f'Player {game.reward % 3} won in {game.plies} plies.')
 
+    '''
     print('human vs human')
     game = Small_state()
     while True:
@@ -138,3 +139,4 @@ if __name__ == '__main__':
             break
     game.render()
     print(f'Player {game.reward % 3} won in {game.plies} plies.')
+    '''
