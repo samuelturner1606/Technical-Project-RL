@@ -7,7 +7,6 @@ import tensorflow.experimental.numpy as tnp
 import sonnet as snt
 import functools
 
-
 class BasicBlock(snt.Module):
   """Basic block composed of an inner op, a norm op and a non linearity."""
   def __init__(self, make_inner_op, non_linearity=tf.nn.relu, name='basic'):
@@ -83,6 +82,4 @@ def make_network(num_layers: int, output_channels: int, bottleneck_channels: int
         make_inner_op=make_conv(output_channels, kernel_shape=3),
         make_last_op=make_conv(output_channels, kernel_shape=3),
         name=f'res_{i}'))
-    return blocks
-
-make_network(6, 256, 128, 8)
+  return blocks
