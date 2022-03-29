@@ -65,7 +65,7 @@ def make_conv(output_channels: int, kernel_shape: int):
   return functools.partial(snt.Conv2D, output_channels, kernel_shape, with_bias=False, w_init=snt.initializers.TruncatedNormal(0.01))
 
 def make_network(num_layers: int, output_channels: int, bottleneck_channels: int, broadcast_every_n: int):
-  blocks = [BasicBlock(make_inner_op=make_conv(output_channels), non_linearity=tf.nn.relu, name='init_conv')]
+  blocks = [BasicBlock(make_inner_op=make_conv(output_channels, kernel_shape=3), non_linearity=tf.nn.relu, name='init_conv')]
   for i in range(num_layers):
     if broadcast_every_n > 0 and i % broadcast_every_n == broadcast_every_n - 1:
       blocks.append(BroadcastResBlock(make_mix_channel_op=make_conv(output_channels, kernel_shape=1), name=f'broadcast_{i}'))
@@ -84,3 +84,5 @@ def make_network(num_layers: int, output_channels: int, bottleneck_channels: int
         make_last_op=make_conv(output_channels, kernel_shape=3),
         name=f'res_{i}'))
     return blocks
+
+make_network(6, 256, 128, 8)
