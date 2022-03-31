@@ -1,37 +1,60 @@
 '''
-A fast and lightweight bitboard board game engine implementation of Shōbu.
+Board game engine implementation of Shōbu using bitwise operators.
+### Details
+ - In many places 1-x (or 1^x) is used instead of ~x or not x in order to get the desired output.
 '''
 from random import choice, shuffle
-from collections import deque
-from dataclasses import dataclass
+import numpy as np
 
-DIRECTIONS = {'N':6, 'E':-1, 'S':-6, 'W':1, 'NE':5, 'NW':7, 'SE':-7, 'SW':-5}
-BITMASK = 0b1111001111001111001111 # bitmask deletes bits that move off the board
-COMBOS:tuple[dict[str,tuple[tuple[int]]]] = ( # board indices: passive board (p,i) -> aggro boards (p,~i) or (~p,i)
-    {'01':((0,0),(0,1)), '02':((0,0),(1,0)), '10':((0,1),(0,0)), '13':((0,1),(1,1))},
-    {'20':((1,0),(0,0)), '23':((1,0),(1,1)), '31':((1,1),(0,1)), '32':((1,1),(1,0))} 
+DI: dict[str,tuple[int]] = {'N':(-1,0),'NE':(-1,1),'E':(0,1),'SE':(1,1),'S':(1,0),'SW':(1,-1),'W':(0,-1),'NW':(-1,-1) }
+SHIFT2 = {
+    1: {
+        'N':(-1,0),
+        'NE':(-1,1),
+        'E':(0,1),
+        'SE':(1,1),
+        'S':(1,0),
+        'SW':(1,-1),
+        'W':(0,-1),
+        'NW':(-1,-1) }, 
+    2: {
+        'N':(-2,0),
+        'NE':(-2,2),
+        'E':(0,2),
+        'SE':(2,2),
+        'S':(2,0),
+        'SW':(2,-2),
+        'W':(0,-2),
+        'NW':(-2,-2) }
+}
+
+COMBOS = ( # mapping of passive to aggro board combinations
+    { 0: [1, 2], 1: [0, 3]}, # player 2
+    { 2: [0, 3], 3: [1, 2]} # player 1
 )
-@dataclass
-class Board:
-    b1: int
-    b2: int
 
-@dataclass
-class State:
-    'Uniquely defines a Shōbu game state.'
-    
-    boards:list[list[list[int]]] = [[[15,3932160], [15,3932160]],[[15,3932160], [15,3932160]]] # index 1 corresponds to player 1
+def negate(offset: tuple[int]) -> tuple[int]:
+    'Returns the shift `offset` in the opposite direction.'
+    return tuple(map((-1).__mul__, offset))
 
-    def render(self, message: str = '') -> None:
-        'Print the current game state.'
-        print(f'-------- {str(message)}')
-        for i in 0,1:
-            left = mailbox(self.boards[i][0], i^0)
-            right = mailbox(self.boards[i][1], i^1)
-            for row in range(4):
-                print(left[row]+right[row])
-        return
-    
+def get_choice(choices: list[str], prompt: str = ''):
+    'General user input handling function.'
+    choice = ''
+    while choice not in choices:
+        choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
+    return choice
+
+def count_actions(boards):
+    'Count the number of legal actions in the current boards.'
+    pass
+
+class State2:
+    'Object containing all information required to uniquely define a Shōbu game boards.'
+    def __init__(self) -> None:
+        self.done:bool = False
+        self.reward:int = 0
+        self.plies:int = 0
+
     def is_terminal(self) -> bool:
         '''The first player to lose all their stones on any board loses the game. 
         Reward values 1 = player 1 win, -1 = player 2 win and 0 = game not over.
@@ -56,7 +79,7 @@ class State:
     def make_move(self, passive_board: list[int], aggro_board: list[int], passive_end: int, aggro_end: int, direction: int, distance: int) -> None:
         'Update the two boards inplace with the legal passive and aggro moves.'
         passive_start = bitshift(passive_end, -direction, distance)
-        passive_board[self.player] ^= (passive_start | passive_end)
+        p ^= (passive_start | passive_end)
         aggro_start = bitshift(aggro_end, -direction, distance)
         aggro_board[self.player] ^= (aggro_start | aggro_end)
         path = aggro_end | bitshift(aggro_end, -direction, 1)
@@ -69,195 +92,141 @@ class State:
         return
     
     def all_legals(self) -> dict[tuple[tuple[int]],dict[str,dict[int,tuple]]]:
-        '''Find all legal moves for all board combinations.\n
-        Returns { boards: { direction : { distance : (passive moves, aggro moves) } } }\n
-        Where boards are the indice tuples and moves are ending positions'''
-        b = self.board_legals()
-        output = {}
-        for p, a in COMBOS[self.player]:
-            passive_board = self.boards[p[0]][p[1]]
-            aggro_board = self.boards[a[0]][a[1]]
-            directions = {}
-            for key in DIRECTIONS.keys():
-                distances = {}
-                passives = b[tuple(passive_board)][key][0]
-                aggros = b[tuple(aggro_board)][key][1]
-                if passives[0] and aggros[0]: # has legal moves at distance 1
-                    distances[1] = (passives[0], aggros[0])
-                    if passives[1] and aggros[1]: # has legal moves at distance 2
-                        distances[2] = (passives[1], aggros[1])
-                    directions[key] = distances
-            if directions:
-                output[(p, a)] = directions
-        if not output: # if no legal moves
-            self.render('No legal moves')
-            self.done = True
-            if self.player == 1: 
-                
-                self.reward = -1 # player 1 loses since they cannot move
-            else:
-                self.reward = 1
-        return output
-    
-    def board_legals(self) -> dict[tuple,dict[int,tuple]]:
-        '''Find all legal moves, in all directions, on all boards not including board combos.\n
-        Returns { board : { direction : (passive moves, aggro moves) } }'''
-        output = {}
-        for side in self.boards:
-            for board in side:
-                if tuple(board) not in output:
-                    temp = {}
-                    for key, d in DIRECTIONS.items():
-                        temp[key] = (self.legal_passives(board,d), self.legal_aggros(board,d))
-                    output[tuple(board)] = temp
-        return output
-
-    def _legal_passives(self, passive_board: list[int], direction: int) -> tuple[int]:
-        'Find the ending squares of all legal passive moves, for all distances, in a direction, on a given board.'
-        empty = ~(passive_board[self.player] | passive_board[not self.player])
-        passive1 = bitshift(passive_board[self.player], direction, 1) & empty
-        passive2 = bitshift(passive1, direction, 1) & empty
-        return passive1, passive2
-    
-    def _legal_aggros(self, aggro_board: list[int], direction: int) -> tuple[int]:
-        'Find the ending squares of all legal aggro moves, for all distances, in a direction, on a given board.'
-        p2 = aggro_board[self.player]
-        p3 = bitshift(p2, direction, 1)
-        x2 = p2 | aggro_board[not self.player]
-        x1 = bitshift(x2, -direction, 1)
-        x3 = bitshift(x2, direction, 1)
-        # not pushing more than one stone or your own stones
-        legal_aggro1 = ~( (x1 & x2) | p2 )
-        aggro1 = bitshift(p2, direction, 1) & legal_aggro1 
-        legal_aggro2 = ~( (x2|x3) & (x1|x2|p3) & (x1|x3|p2) )
-        aggro2 = bitshift(p2, direction, 2) & legal_aggro2
-        return aggro1, aggro2
+        '''Find all legal moves for all board combinations.
+        '''
+        pass
 
     def random_ply(self) -> None:
         'Randomly play a legal move. Faster than choosing from all legal moves.'
-        #boards = self.boards.copy()
-        combos = list(COMBOS[self.player])
-        while combos:
-            shuffle(combos)
-            p, a = combos.pop()
-            p_board = self.boards[p[0]][p[1]]
-            a_board = self.boards[a[0]][a[1]]
-            directions = list(DIRECTIONS.values())
-            while directions:
-                shuffle(directions)
-                direc = directions.pop()
-                p1, p2 = self.legal_passives(p_board, direc)
-                a1, a2 = self.legal_aggros(a_board, direc)
-                distances = [1,2]
-                while distances:
-                    shuffle(distances)
-                    dist = distances.pop()
-                    if dist == 1 and p1 and a1:
-                        random_p = choice(split(p1))
-                        random_a = choice(split(a1))
-                        self.make_move(p_board, a_board, random_p, random_a, direc, dist)
-                        return
-                    elif dist == 2 and p2 and a2:
-                        random_p = choice(split(p2))
-                        random_a = choice(split(a2))
-                        self.make_move(p_board, a_board, random_p, random_a, direc, dist)
-                        return
-        self.render('No legal random moves')
-        self.done = True
-        if self.player == 1: 
-            self.reward = -1 # player 1 loses since they cannot move
-        else:
-            self.reward = 1
-        self.player = not self.player
         return
     
     def human_ply(self) -> None:
-        'Ask the user for a legal move and update the state with it.'
-        legals = self.all_legals()
-        if legals:
-            combos = COMBOS2[self.player]
-            combo = combos[get_choice(list(combos), 'passive and aggro board combo')]
-            p_board = self.boards[combo[0][0]][combo[0][1]]
-            a_board = self.boards[combo[1][0]][combo[1][1]]
-            direc = get_choice(list(legals[combo]), 'direction')
-            dist = int(get_choice([ str(i) for i in list(legals[combo][direc]) ], 'distance'))
-            passives, aggros = legals[combo][direc][dist]
-            end1 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(passives)],'passive move ending square'))
-            end2 = 1 << int(get_choice([str(n.bit_length()-1) for n in split(aggros)],'aggressive move ending square'))
-            self.make_move(p_board, a_board, end1, end2, DIRECTIONS[direc], dist)
-            self.player = not self.player
+        'Ask the user for a legal move and update the boards with it.'
         return
 
-    @staticmethod
-    def _bitshift(bits: int, direction: int, distance: int) -> int:
-        shift = direction * distance
-        if shift > 0:
-            return (bits >> shift) & BITMASK
+
+class State:
+    '4 Shōbu 4x4 boards.'
+    def __init__(self, boards: np.ndarray = None, player: int = 1) -> None:
+        self.player = player # player 1 = index 1, player 2 = index 0
+        if boards is None:
+            self.boards = np.zeros(shape=(2,8,8), dtype=np.uint8)
+            self.boards[1, -1:0:-4, :] = 1 # player 1 pieces
+            self.boards[0, 0:-1:4, :] = 1 # player 2 pieces
         else:
-            return (bits << -shift) & BITMASK
-
-    @staticmethod
-    def _split(legal_moves: int) -> list[int]:
-        'Split `legal moves` into invidual moves by the on-bits.'
-        seperate_moves = []
-        while legal_moves:
-            seperate_moves.append(legal_moves & -legal_moves) # get least significant on-bit
-            legal_moves &= legal_moves-1 # remove least significant on-bit
-        return seperate_moves
-
-    @staticmethod
-    def _view(bits: int, message: str = '') -> None:
-        'For debugging.'
-        mailbox = [ bits & (1 << n) and 1  for n in range(24) ]
-        mailbox_2D = [ mailbox[ 6*row : 6*row+6 ] for row in range(4) ]
-        print(*mailbox_2D, sep='\n', end=f'\n{message}\n\n')
+            self.boards = np.asarray(boards, dtype=np.uint8)
+            assert self.boards.shape == (2,8,8), 'Board not the right shape.'
+            
+    def render(self) -> None:
+        'Prints the current game boards.'
+        return print(2*self.boards[0,:,:] + self.boards[1,:,:])
+    
+    def board(self, num: int) -> np.ndarray:
+        'Get a 2x4x4 board from the 2x8x8 `self.boards`, via the numbers 0 to 3.'
+        if num == 0:
+            return self.boards[:, 0:4, 0:4]
+        elif num == 1:
+            return self.boards[:, 0:4, 4:8]
+        elif num == 2:
+            return self.boards[:, 4:8, 0:4]
+        else:
+            return self.boards[:, 4:8, 4:8]
+    
+    QUADRANT = ( # Get an object that will slice an nx8x8 array into nx4x4, via the numbers 0 to 3.
+        (slice(None), slice(0,4), slice(0,4)),
+        (slice(None), slice(0,4), slice(4,8)),
+        (slice(None), slice(4,8), slice(0,4)),
+        (slice(None), slice(4,8), slice(4,8))
+        ) 
+    def quadrant(self, array: np.ndarray, num: int):
+        
         return
 
-    @staticmethod
-    def _mailbox(bitboards: list[int], type: bool) -> list[list[int]]:
-        'Transform the bitboards into a 2D mailbox representation. Type refers to whether the board is light = 0 or dark = 1.'
-        if type:
-            colour = '\033[34m' # blue
-        else:
-            colour = '\033[39m' # white
-        mailbox_2D = 4 * [colour]
-        for row in range(4):
-            for n in range(6*row, 6*row+4):
-                mailbox_2D[row] += str( (bitboards[1] & (1 << n) and 1) + 2 * (bitboards[0] & (1 << n) and 1) )
-        return mailbox_2D
+    def shift(self, array: np.ndarray, offset: tuple) -> np.ndarray:
+        'Returns a copy of an `array` shifted (without rollover) by `offset`.'
+        assert len(offset) == array.ndim, 'Number of dimensions do not match.'
+        new_array = np.empty_like(array)
+        def slice1(o):
+            return slice(o, None) if o >= 0 else slice(0, o)
+        new_array[tuple(slice1(o) for o in offset)] = (array[tuple(slice1(-o) for o in offset)])
+        for axis, o in enumerate(offset):
+            new_array[(slice(None),) * axis + (slice(0, o) if o >= 0 else slice(o, None),)] = 0
+        return new_array
 
-    @staticmethod
-    def _get_choice(choices: list[str], prompt: str = ''):
-        'General user input handling function.'
-        choice = ''
-        while choice not in choices:
-            choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
-        return choice
+    def legal_passives(self, p_board: np.ndarray, direction: str) -> tuple[np.ndarray]:
+        '''Find the ending squares of all legal passive moves, for all distances, in a direction, on a given board.
+        @param p_board: A 2x4x4 ndarray representing the board to play a passive move on.
+        @param direction: Compass direction.
+        @return passive1: A 2x4x4 ndarray with a legal passive move, of distance 1, applied to all pieces of the current player.
+        @return passive2: A 2x4x4 ndarray with a legal passive move, of distance 2, applied to all pieces of the current player.
+        '''
+        assert p_board.shape == (2,4,4), 'Passive board not the right shape.'
+        player = p_board[self.player, :, :]
+        opponent = p_board[1 - self.player, :, :]
+        empty = 1 - (player | opponent)
+        offset1 = DI[direction]
+        passive1 = self.shift(player, offset1) & empty
+        passive2 = self.shift(passive1, offset1) & empty
+        return passive1, passive2
+    
+    def legal_aggros(self, a_board: np.ndarray, direction: str) -> tuple[np.ndarray]:
+        '''Find the ending squares of all legal aggressive moves, for all distances, in a direction, on a given board.
+        @param a_board: A 2x4x4 ndarray representing the board to play a aggressive move on.
+        @param direction: Compass direction.
+        @return aggro1: A 2x4x4 ndarray with a legal aggressive move, of distance 1, applied to all pieces of the current player.
+        @return aggro2: A 2x4x4 ndarray with a legal aggressive move, of distance 2, applied to all pieces of the current player.
+        '''
+        assert a_board.shape == (2,4,4), 'Aggressive board not the right shape.'
+        offset1 = DI[direction]
+        p2 = a_board[self.player, :, :]
+        p3 = self.shift(p2, offset1)
+        x2 = p2 | a_board[1 - self.player, :, :]
+        x1 = self.shift(x2, negate(offset1))
+        x3 = self.shift(x2, offset1)
+        # not pushing more than one stone or your own stones
+        legal_aggro1 = 1 - ( (x1 & x2) | p2 )
+        aggro1 = p3 & legal_aggro1 
+        legal_aggro2 = 1 - ( (x2|x3) & (x1|x2|p3) & (x1|x3|p2) )
+        aggro2 = self.shift(p3, offset1) & legal_aggro2
+        return aggro1, aggro2
 
-def count_actions(state: State):
-    'Count the number of legal actions in the current state.'
-    count = 0
-    legals = state.all_legals()
-    for combo in legals:
-        for direction in legals[combo]:
-            for distance in legals[combo][direction]:
-                p, a = legals[combo][direction][distance]
-                p_count = len(split(p))
-                a_count = len(split(a))
-                count += (p_count * a_count)
-    return count
-
-class Game:
-    'Shōbu game.'
-    def __init__(self) -> None:
-        self.plies:int = 0
-        self.done:bool = False
-        self.path:deque = deque()
-        reward:int = 0
-        player:bool = True # player 1 = True, player 2 = False
-        pass
-
+    def legals(self) -> np.ndarray:
+        '''Find all legal moves, in all directions, on all boards not including board combos.'''
+        output = np.zeros(shape=(32,8,8), dtype=np.uint8)
+        boards = [self.board(i).copy() for i in range(4)]
+        #for index, direction in enumerate(DI):
+            #pass
+        direction = 'N'
+        index = 0
+        for b in COMBOS[self.player]:
+            p1, p2 = self.legal_passives(boards[b], direction)
+        return output
 if __name__ == '__main__':
-    game = State()
-    game.boards = [[15,565376],[15,565376]],[[15,565376],[15,565376]]
+    #a = np.random.randint(2, size=(2,8,8), dtype=np.uint8)
+    #b1 = a[1,:,:]
+    #b2 = a[0,:,:]
+    #a[1,:,:] = ( b2 & b1) ^ b1
+    a = [[[1, 0, 0, 0, 1, 0, 0, 0],
+    [0, 0, 0, 1, 1, 1, 0, 0],
+    [0, 0, 1, 0, 0, 0, 1, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0],
+    [0, 0, 0, 1, 0, 0, 0, 1],
+    [1, 0, 0, 1, 0, 0, 0, 0],
+    [0, 1, 0, 0, 1, 0, 0, 0],
+    [0, 0, 0, 0, 0, 0, 0, 0]],
+    [[0, 0, 1, 1, 0, 1, 0, 0],
+    [1, 0, 1, 0, 0, 0, 0, 0],
+    [1, 1, 0, 1, 1, 1, 0, 1],
+    [1, 1, 1, 1, 1, 0, 1, 0],
+    [1, 0, 1, 0, 1, 1, 1, 0],
+    [0, 1, 1, 0, 0, 0, 1, 0],
+    [1, 0, 1, 0, 0, 1, 1, 0],
+    [1, 0, 1, 0, 1, 1, 0, 0]]]
+    a = np.asarray(a, dtype=np.uint8)
+
+    game = State(a)
     game.render()
+    game.player = 1 - game.player
+    game.legals()
+
+pass
