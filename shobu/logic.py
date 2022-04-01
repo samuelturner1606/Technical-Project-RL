@@ -9,12 +9,12 @@ import numpy as np
 COMBOS = ( # mapping of passive to aggro board combinations
     { 0: (1, 2), 1: (0, 3)}, # player 2
     { 2: (0, 3), 3: (1, 2)} )# player 1
-QUADRANT = ( # Get an object that will slice an nx8x8 np.ndarray into nx4x4, via the indices 0 to 3.
+SHIFT: dict[str,tuple[int]] = {'N':(-1,0),'NE':(-1,1),'E':(0,1),'SE':(1,1),'S':(1,0),'SW':(1,-1),'W':(0,-1),'NW':(-1,-1)}
+QUADRANT = ( # Get an object that will slice an nx8x8 ndarray into nx4x4, via the indices 0 to 3.
     (slice(None), slice(0,4), slice(0,4)),
     (slice(None), slice(0,4), slice(4,8)),
     (slice(None), slice(4,8), slice(0,4)),
     (slice(None), slice(4,8), slice(4,8)) )
-SHIFT: dict[str,tuple[int]] = {'N':(-1,0),'NE':(-1,1),'E':(0,1),'SE':(1,1),'S':(1,0),'SW':(1,-1),'W':(0,-1),'NW':(-1,-1)}
 
 def negate(offset: tuple[int]) -> tuple[int]:
     'Returns the shift `offset` in the opposite direction.'
@@ -40,26 +40,6 @@ class State2:
 
     def is_terminal(self) -> bool:
         return
-    
-    def make_move(self, passive_board: list[int], aggro_board: list[int], passive_end: int, aggro_end: int, direction: int, distance: int) -> None:
-        'Update the two boards inplace with the legal passive and aggro moves.'
-        passive_start = bitshift(passive_end, -direction, distance)
-        p ^= (passive_start | passive_end)
-        aggro_start = bitshift(aggro_end, -direction, distance)
-        aggro_board[self.player] ^= (aggro_start | aggro_end)
-        path = aggro_end | bitshift(aggro_end, -direction, 1)
-        collision = path & aggro_board[not self.player]
-        if collision: 
-            landing = bitshift(aggro_end, direction, 1)
-            aggro_board[not self.player] ^= (collision | landing)
-        self.plies += 1
-        self.player = not self.player
-        return
-    
-    def all_legals(self) -> dict[tuple[tuple[int]],dict[str,dict[int,tuple]]]:
-        '''Find all legal moves for all board combinations.
-        '''
-        pass
 
     def random_ply(self) -> None:
         'Randomly play a legal move. Faster than choosing from all legal moves.'
@@ -74,14 +54,14 @@ class State:
     @param boards: 2x8x8 np.ndarray or None
     @param player: 1 for player1, 0 for player2.'''
     def __init__(self, boards: np.ndarray = None, player: int = 1) -> None:
-        assert (player==1 or player==0), 'Player parameter incorrect.'
+        assert player in (0,1), 'Player parameter incorrect.'
         self.player = player
         if boards is None: # creates default starting state
-            self.boards = np.zeros(shape=(2,8,8), dtype=np.uint8)
+            self.boards: np.ndarray = np.zeros(shape=(2,8,8), dtype=np.uint8)
             self.boards[1, -1:0:-4, :] = 1 # player 1 pieces
             self.boards[0, 0:-1:4, :] = 1 # player 2 pieces
         else:
-            self.boards = np.asarray(boards, dtype=np.uint8)
+            self.boards: np.ndarray = np.asarray(boards, dtype=np.uint8)
             assert self.boards.shape == (2,8,8), 'Board not the right shape.'
             
     def render(self) -> None:
@@ -136,22 +116,53 @@ class State:
         return aggro1, aggro2
 
     def legals(self) -> np.ndarray:
-        'Find all legal moves, in all directions, on all boards.'
+        '''Find all legal moves on all boards, in all directions and distances.
+        @returns output: 32x8x8 ndarray, where for index (i, j, k):
+        - i%2 indicates the move distance
+        - i//4 indicates the compass direction of the move
+        - 2*(j//4) + (k//4) indicates the board played on'''
         output = []
         board = [ self.boards[QUADRANT[i]] for i in range(len(QUADRANT)) ]
         for direction in SHIFT:
             block = np.zeros(shape=(4,8,8), dtype=np.uint8)
             for p in COMBOS[self.player]:
-                p1, p2 = self.legal_passives(board[p], direction)
-                if p1.any():
-                    block[QUADRANT[p]][0:2, :, :] = np.stack((p1,p2))
+                passives1, passives2 = self.legal_passives(board[p], direction)
+                if passives1.any():
+                    block[0:2][QUADRANT[p]] = np.stack((passives1,passives2))
                     for a in COMBOS[self.player][p]:
-                        a1, a2 = self.legal_aggros(board[a], direction)
-                        if not p2.any():
-                            a2 = np.zeros_like(a2)
-                        block[QUADRANT[a]][2:4, :, :] = np.stack((a1,a2))
+                        aggros1, aggros2 = self.legal_aggros(board[a], direction)
+                        if not passives2.any():
+                            aggros2 = np.zeros_like(aggros2) # can't play aggro move if couldn't play passive
+                        block[2:4][QUADRANT[a]] = np.stack((aggros1,aggros2))
             output.append(block)
         return np.concatenate(output)
+
+    def make_move(self, passive_end: np.ndarray, aggro_end: np.ndarray, direction: str, distance: int) -> np.ndarray:
+        'Returns a copy of the boards with a legal passive and aggro move having been applied.'
+        assert passive_end.shape == (8,8)
+        assert aggro_end.shape == (8,8)
+        offset1 = SHIFT[direction]
+        neg_offset1 = negate(offset1)
+        offset = tuple(map((distance).__mul__, offset1))
+        neg_offset = negate(offset)
+        # passive move
+        new_boards: np.ndarray = self.boards.copy()
+        boards_player = new_boards[self.player, :, :]
+        passive_start = self.shift(passive_end, neg_offset)
+        boards_player ^= (passive_start | passive_end)
+        # aggro move
+        aggro_start = self.shift(aggro_end, neg_offset)
+        boards_player ^= (aggro_start | aggro_end)
+        
+        path = aggro_end | self.shift(aggro_end, neg_offset1)
+        boards_opponent: np.ndarray = new_boards[1 - self.player, :, :]
+        collision = path & boards_opponent
+        if collision.any(): 
+            landing = self.shift(aggro_end, offset1)
+            boards_opponent ^= (collision | landing)
+        assert new_boards.shape == (2,8,8)
+        return new_boards
+
 if __name__ == '__main__':
     #a = np.random.randint(2, size=(2,8,8), dtype=np.uint8)
     #b1 = a[1,:,:]
