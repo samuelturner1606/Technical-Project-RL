@@ -150,28 +150,25 @@ class State:
         @param p_end: (x,y) coordinates representing the ending square of an assumed legal passive move
         @param a_end: (x,y) coordinates representing the ending square of an assumed legal aggressive move
         @returns new_boards: 2x8x8 ndarray'''
-        offset1 = SHIFT[direction]
+        a, b = SHIFT[direction]; offset1 = (0, a, b)
         neg_offset = negate(tuple(map((distance).__mul__, offset1)))
-
         new_boards: np.ndarray = self.boards.copy()
+        # turn on ending coordinates in 2x8x8 zeros ndarray
         endings = np.zeros_like(new_boards)
-        endings[self.player, p_end[1], p_end[0]] = 1
-        endings[:, a_end[1], a_end[0]] = 1
-        # passive move
-        
-
-
-        passive_start = self.shift(passive_end, neg_offset)
-        boards_player ^= (passive_start | passive_end)
-        # aggro move
-        aggro_start = self.shift(aggro_end, neg_offset)
-        boards_player ^= (aggro_start | aggro_end)
-        path = aggro_end | self.shift(aggro_end, negate(offset1))
-
-        collision = path & boards_opponent
+        x1 = p_end[1]; y1 = p_end[0]; x2 = a_end[1]; y2 = a_end[0]
+        endings[self.player, x1, y1] = 1
+        endings[:, x2, y2] = 1
+        startings = self.shift(endings, neg_offset)
+        new_boards[self.player, :, :] ^= (startings | endings)[self.player, :, :] # update player pieces
+        # determine if collision with opponent piece
+        path = endings | self.shift(endings, negate(offset1))
+        collision: np.ndarray = (path & new_boards)[1 - self.player, :, :]
         if collision.any(): 
-            landing = self.shift(aggro_end, offset1)
-            boards_opponent ^= (collision | landing)
+            landing = self.shift(endings, offset1)[1 - self.player, :, :]
+            # mask out when landing on other boards
+            mask = np.zeros_like(landing)
+
+            new_boards[1 - self.player, :, :] ^= (collision | landing) # update opponent pieces
         assert new_boards.shape == (2,8,8)
         return new_boards
 
@@ -200,6 +197,6 @@ if __name__ == '__main__':
     game = State(a)
     game.render()
     #x = game.legals()
-    #x = game.make_move((1,0), (3,1), 'E', 1)
+    x = game.make_move((1,4), (3,1), 'E', 1)
 
 pass
