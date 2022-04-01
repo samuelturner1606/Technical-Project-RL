@@ -66,10 +66,10 @@ class State:
             
     def render(self) -> None:
         'Prints the current game boards.'
-        m = (2*self.boards[0,:,:] + self.boards[1,:,:]).astype(str)
+        m = (2*self.boards[0] + self.boards[1]).astype(str)
         m = np.insert(m, 4, 8*['|'], 1)
         m = np.insert(m, 4, 9*['-'], 0)
-        txt: str = '  ' + np.array_str(m)
+        txt: str = '\n ' + np.array_str(m)
         txt = txt.replace('\'','')
         txt = txt.replace('[','')
         txt = txt.replace(']','')
@@ -94,8 +94,8 @@ class State:
         @return passive1: A 2x4x4 ndarray with a legal passive move, of distance 1, applied to all pieces of the current player.
         @return passive2: A 2x4x4 ndarray with a legal passive move, of distance 2, applied to all pieces of the current player.'''
         assert p_board.shape == (2,4,4), 'Passive board not the right shape.'
-        player = p_board[self.player, :, :]
-        opponent = p_board[1 - self.player, :, :]
+        player = p_board[self.player]
+        opponent = p_board[1 - self.player]
         empty = 1 - (player | opponent)
         offset1 = SHIFT[direction]
         passive1 = self.shift(player, offset1) & empty
@@ -111,9 +111,9 @@ class State:
         '''
         assert a_board.shape == (2,4,4), 'Aggressive board not the right shape.'
         offset1 = SHIFT[direction]
-        p2 = a_board[self.player, :, :]
+        p2 = a_board[self.player]
         p3 = self.shift(p2, offset1)
-        x2 = p2 | a_board[1 - self.player, :, :]
+        x2 = p2 | a_board[1 - self.player]
         x1 = self.shift(x2, negate(offset1))
         x3 = self.shift(x2, offset1)
         # not pushing more than one stone or your own stones
@@ -146,29 +146,32 @@ class State:
         return np.concatenate(output)
 
     def make_move(self, p_end: tuple[int], a_end: tuple[int], direction: str, distance: int) -> np.ndarray:
-        '''Returns a copy of the boards with a legal passive and aggressive move having been applied.
-        @param p_end: (x,y) coordinates representing the ending square of an assumed legal passive move
-        @param a_end: (x,y) coordinates representing the ending square of an assumed legal aggressive move
+        '''Returns a copy of the boards with (an assumed) legal passive and aggressive move having been applied.
+        @param p_end: (x_1, y_1) coordinates representing the ending square of the legal passive move
+        @param a_end: (x_2, y_2) coordinates representing the ending square of the legal aggressive move
         @returns new_boards: 2x8x8 ndarray'''
         a, b = SHIFT[direction]; offset1 = (0, a, b)
         neg_offset = negate(tuple(map((distance).__mul__, offset1)))
         new_boards: np.ndarray = self.boards.copy()
         # turn on ending coordinates in 2x8x8 zeros ndarray
         endings = np.zeros_like(new_boards)
-        x1 = p_end[1]; y1 = p_end[0]; x2 = a_end[1]; y2 = a_end[0]
-        endings[self.player, x1, y1] = 1
-        endings[:, x2, y2] = 1
+        x1, y1 = p_end; x2, y2 = a_end
+        endings[self.player, y1, x1] = 1
+        endings[:, y2, x2] = 1
         startings = self.shift(endings, neg_offset)
-        new_boards[self.player, :, :] ^= (startings | endings)[self.player, :, :] # update player pieces
+        new_boards[self.player] ^= (startings | endings)[self.player] # update player pieces
         # determine if collision with opponent piece
-        path = endings | self.shift(endings, negate(offset1))
-        collision: np.ndarray = (path & new_boards)[1 - self.player, :, :]
+        endings = endings[1 - self.player]
+        path = endings | self.shift(endings, negate((a,b)))
+        collision: np.ndarray = path & new_boards[1 - self.player]
         if collision.any(): 
-            landing = self.shift(endings, offset1)[1 - self.player, :, :]
+            landing = self.shift(endings, (a,b))
             # mask out when landing on other boards
             mask = np.zeros_like(landing)
-
-            new_boards[1 - self.player, :, :] ^= (collision | landing) # update opponent pieces
+            x2 = 4*(x2//4); y2 = 4*(y2//4)
+            mask[slice(y2,y2+4), slice(x2,x2+4)] = 1
+            landing &= mask
+            new_boards[1 - self.player] ^= (collision | landing) # update opponent pieces
         assert new_boards.shape == (2,8,8)
         return new_boards
 
@@ -197,6 +200,8 @@ if __name__ == '__main__':
     game = State(a)
     game.render()
     #x = game.legals()
-    x = game.make_move((1,4), (3,1), 'E', 1)
+    x = game.make_move((1,0), (6,1), 'N', 2)
+    game.boards = x
+    game.render()
 
 pass
