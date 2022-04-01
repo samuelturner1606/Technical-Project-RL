@@ -66,7 +66,15 @@ class State:
             
     def render(self) -> None:
         'Prints the current game boards.'
-        return print(2*self.boards[0,:,:] + self.boards[1,:,:])  
+        m = (2*self.boards[0,:,:] + self.boards[1,:,:]).astype(str)
+        m = np.insert(m, 4, 8*['|'], 1)
+        m = np.insert(m, 4, 9*['-'], 0)
+        txt: str = '  ' + np.array_str(m)
+        txt = txt.replace('\'','')
+        txt = txt.replace('[','')
+        txt = txt.replace(']','')
+        out = txt.splitlines(True)
+        return print(*out) 
 
     def shift(self, array: np.ndarray, offset: tuple) -> np.ndarray:
         'Returns a copy of an `array` shifted (without rollover) by `offset`.'
@@ -120,7 +128,7 @@ class State:
         @returns output: 32x8x8 ndarray, where for index (i, j, k):
         - i%2 indicates the move distance
         - i//4 indicates the compass direction of the move
-        - 2*(j//4) + (k//4) indicates the board played on'''
+        - (j,k) indicates the ending square of a move'''
         output = []
         board = [ self.boards[QUADRANT[i]] for i in range(len(QUADRANT)) ]
         for direction in SHIFT:
@@ -137,25 +145,29 @@ class State:
             output.append(block)
         return np.concatenate(output)
 
-    def make_move(self, passive_end: np.ndarray, aggro_end: np.ndarray, direction: str, distance: int) -> np.ndarray:
-        'Returns a copy of the boards with a legal passive and aggro move having been applied.'
-        assert passive_end.shape == (8,8)
-        assert aggro_end.shape == (8,8)
+    def make_move(self, p_end: tuple[int], a_end: tuple[int], direction: str, distance: int) -> np.ndarray:
+        '''Returns a copy of the boards with a legal passive and aggressive move having been applied.
+        @param p_end: (x,y) coordinates representing the ending square of an assumed legal passive move
+        @param a_end: (x,y) coordinates representing the ending square of an assumed legal aggressive move
+        @returns new_boards: 2x8x8 ndarray'''
         offset1 = SHIFT[direction]
-        neg_offset1 = negate(offset1)
-        offset = tuple(map((distance).__mul__, offset1))
-        neg_offset = negate(offset)
-        # passive move
+        neg_offset = negate(tuple(map((distance).__mul__, offset1)))
+
         new_boards: np.ndarray = self.boards.copy()
-        boards_player = new_boards[self.player, :, :]
+        endings = np.zeros_like(new_boards)
+        endings[self.player, p_end[1], p_end[0]] = 1
+        endings[:, a_end[1], a_end[0]] = 1
+        # passive move
+        
+
+
         passive_start = self.shift(passive_end, neg_offset)
         boards_player ^= (passive_start | passive_end)
         # aggro move
         aggro_start = self.shift(aggro_end, neg_offset)
         boards_player ^= (aggro_start | aggro_end)
-        
-        path = aggro_end | self.shift(aggro_end, neg_offset1)
-        boards_opponent: np.ndarray = new_boards[1 - self.player, :, :]
+        path = aggro_end | self.shift(aggro_end, negate(offset1))
+
         collision = path & boards_opponent
         if collision.any(): 
             landing = self.shift(aggro_end, offset1)
@@ -187,20 +199,7 @@ if __name__ == '__main__':
     a = np.asarray(a, dtype=np.uint8)
     game = State(a)
     game.render()
-    x = game.legals()
-    assert x.shape == (32,8,8)
+    #x = game.legals()
+    #x = game.make_move((1,0), (3,1), 'E', 1)
 
 pass
-
-'''
-def board(self, num: int) -> np.ndarray:
-    'Get a 2x4x4 board from the 2x8x8 `self.boards`, via the numbers 0 to 3.'
-    if num == 0:
-        return self.boards[:, 0:4, 0:4]
-    elif num == 1:
-        return self.boards[:, 0:4, 4:8]
-    elif num == 2:
-        return self.boards[:, 4:8, 0:4]
-    else:
-        return self.boards[:, 4:8, 4:8]
-'''
