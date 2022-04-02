@@ -145,49 +145,10 @@ class State:
                             aggros2 = np.zeros(aggros2.shape, aggros2.dtype) # can't play aggro move 
                         block[2:4][QUADRANT[a]] = np.stack((aggros1,aggros2))
             output.append(block)
-        return np.concatenate(output)
-
-    def make_move(self, passive_end: tuple[int], aggro_end: tuple[int], direction: str, distance: int) -> np.ndarray:
-        '''Returns a copy of the boards with (an assumed) legal passive and aggressive move having been applied.
-        @param p_end: (x_1, y_1) coordinates representing the ending square of the legal passive move
-        @param a_end: (x_2, y_2) coordinates representing the ending square of the legal aggressive move
-        @return new_boards: 2x8x8 ndarray'''
-        a, b = SHIFT[direction]
-        offset1 = (0, a, b)
-        neg_offset = negate(tuple(map((distance).__mul__, offset1)))
-        new_boards: np.ndarray = self.boards.copy()
-        # turn on ending coordinates in 2x8x8 zeros ndarray
-        endings = np.zeros(new_boards.shape, new_boards.dtype)
-        x1, y1 = passive_end; x2, y2 = aggro_end
-        endings[self.player, y1, x1] = 1
-        endings[:, y2, x2] = 1
-        startings = self.shift(endings, neg_offset)
-        new_boards[self.player] ^= (startings | endings)[self.player] # update player pieces
-        # determine if collision with opponent piece
-        endings = endings[1 - self.player]
-        path = endings | self.shift(endings, negate((a,b)))
-        collision: np.ndarray = path & new_boards[1 - self.player]
-        if collision.any(): 
-            landing = self.shift(endings, (a,b))
-            # mask out when landing on other boards
-            mask = np.zeros(landing.shape, landing.dtype)
-            mask[QUADRANT[quadrant(x2,y2)]] = 1 # quadrant of board
-            landing &= mask
-            new_boards[1 - self.player] ^= (collision | landing) # update opponent pieces
-        assert new_boards.shape == (2,8,8)
-        return new_boards
-
-    def actions_to_move(self, action1: tuple[int], action2: tuple[int]):
-        '''Map the (z, y, x) coordinates of actions within the 32x8x8 `legal actions` ndarray into a form which the `make_move` function uses.
-        @param action1: (z1, y1, x1)
-        @param action2: (z2, y2, x2)'''
-        z1, y1, x1 = action1; z2, y2, x2 = action2
-        distance1 = (z1%2)+1
-        distance2 = (z2%2)+1
-        directions = list(SHIFT)
-        direction1 = directions[z1//4]
-        direction2 = directions[z2//4]
-        return
+        output: np.ndarray = np.concatenate(output)
+        assert output.shape == (32,8,8), 'Shape of legal actions is wrong'
+        assert output.any(), 'No legal actions'
+        return output
     
     def random_action(self, legal_actions: np.ndarray) -> tuple[tuple[int],tuple[int]]:
         '''
@@ -211,6 +172,47 @@ class State:
         _, y1, x1 = choice(p_coords)
         return (z1, y1, x1), (z2, y2, x2)
 
+    def action_to_move(self, action1: tuple[int,int,int], action2: tuple[int,int,int]):
+        '''Use the (z, y, x) coordinates of actions within the 32x8x8 `legal actions` ndarray to `_make_move`.
+        @param action1: (z1, y1, x1)
+        @param action2: (z2, y2, x2)
+        @return new_boards: via `_make_move`'''
+        z1, y1, x1 = action1; z2, y2, x2 = action2
+        distance1 = (z1%2)+1; distance2 = (z2%2)+1
+        assert(distance1 == distance2), 'Passive and aggressive moves must have the same distance'
+        direction1 = z1//4; direction2 = z2//4
+        assert(direction1 == direction2), 'Passive and aggressive moves must have the same direction'
+        direction = list(SHIFT)[direction1]
+        return self._make_move(x1,y1,x2,y2,direction,distance1)
+
+    def _make_move(self, x1: int, y1: int, x2: int, y2: int, direction: str, distance: int) -> np.ndarray:
+        '''Returns a copy of the boards with (an assumed) legal passive and aggressive move having been applied.
+        @param (x1, y1): coordinates representing the ending square of the legal passive move
+        @param (x2, y2): coordinates representing the ending square of the legal aggressive move
+        @return new_boards: 2x8x8 ndarray'''
+        a, b = SHIFT[direction]
+        offset1 = (0, a, b)
+        neg_offset = negate(tuple(map((distance).__mul__, offset1)))
+        new_boards: np.ndarray = self.boards.copy()
+        # turn on ending coordinates in 2x8x8 zeros ndarray
+        endings = np.zeros(new_boards.shape, new_boards.dtype)
+        endings[self.player, y1, x1] = 1
+        endings[:, y2, x2] = 1
+        startings = self.shift(endings, neg_offset)
+        new_boards[self.player] ^= (startings | endings)[self.player] # update player pieces
+        # determine if collision with opponent piece
+        endings = endings[1 - self.player]
+        path = endings | self.shift(endings, negate((a,b)))
+        collision: np.ndarray = path & new_boards[1 - self.player]
+        if collision.any(): 
+            landing = self.shift(endings, (a,b))
+            # mask out when landing on other boards
+            mask = np.zeros(landing.shape, landing.dtype)
+            mask[QUADRANT[quadrant(x2,y2)][1:]] = 1 # quadrant of board
+            landing &= mask
+            new_boards[1 - self.player] ^= (collision | landing) # update opponent pieces
+        assert new_boards.shape == (2,8,8)
+        return new_boards
 if __name__ == '__main__':
     a = [[[1, 0, 0, 0, 1, 0, 0, 0],
     [0, 0, 0, 1, 1, 1, 0, 0],
@@ -230,7 +232,9 @@ if __name__ == '__main__':
     [1, 0, 1, 0, 1, 1, 0, 0]]]
     a = np.asarray(a, dtype=np.uint8)
     game = State(a)
-    game.render()
-    l = game.legal_actions()
-    r1, r2 = game.random_action(l)
+    for _ in range(20):
+        game.render()
+        l = game.legal_actions()
+        r1, r2 = game.random_action(l)
+        game.boards = game.action_to_move(r1, r2)
     pass
