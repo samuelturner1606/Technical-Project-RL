@@ -16,6 +16,10 @@ QUADRANT = ( # Get an object that will slice an nx8x8 ndarray into nx4x4, via th
     (slice(None), slice(4,8), slice(0,4)),
     (slice(None), slice(4,8), slice(4,8)) )
 
+def quadrant(x: int, y: int) -> int:
+    'Maps (x, y) coordinates to board quadrants 0 to 3.'
+    return x//4 + 2*(y//4)
+
 def negate(offset: tuple[int]) -> tuple[int]:
     'Returns the shift `offset` in the opposite direction.'
     return tuple(map((-1).__mul__, offset))
@@ -39,10 +43,6 @@ class State2:
         self.plies:int = 0
 
     def is_terminal(self) -> bool:
-        return
-
-    def random_ply(self) -> None:
-        'Randomly play a legal move. Faster than choosing from all legal moves.'
         return
     
     def human_ply(self) -> None:
@@ -116,19 +116,21 @@ class State:
         x2 = p2 | a_board[1 - self.player]
         x1 = self.shift(x2, negate(offset1))
         x3 = self.shift(x2, offset1)
-        # not pushing more than one stone or your own stones
-        legal_aggro1 = 1 - ( (x1 & x2) | p2 )
-        aggro1 = p3 & legal_aggro1 
-        legal_aggro2 = 1 - ( (x2|x3) & (x1|x2|p3) & (x1|x3|p2) )
-        aggro2 = self.shift(p3, offset1) & legal_aggro2
+        mask1 = 1 - ( (x1 & x2) | p2 ) 
+        aggro1 = p3 & mask1 
+        mask2 = 1 - ( (x2|x3) & (x1|x2|p3) & (x1|x3|p2) ) # not pushing more than one stone or your own stones
+        aggro2 = self.shift(p3, offset1) & mask2
         return aggro1, aggro2
 
-    def legals(self) -> np.ndarray:
-        '''Find all legal moves on all boards, in all directions and distances.
-        @returns output: 32x8x8 ndarray, where for index (i, j, k):
-        - i%2 indicates the move distance
-        - i//4 indicates the compass direction of the move
-        - (j,k) indicates the ending square of a move'''
+    def legal_actions(self) -> np.ndarray:
+        '''Find all legal actions on all boards, in all directions and distances.
+        @return output: 32x8x8 ndarray, where for coordinates (z, y, x):
+        - (z % 2)+1, indicates the move distance
+        - z // 4, indicates the compass direction of the move
+        - (y, x) indicates the ending square of a move relative from the top-left corner of the boards
+
+        Legal and illegal actions are given a value of 1 and 0 respectively in the `output`. The `output` can be used to directly mask the policy head of the neural network for legal actions.
+        '''
         output = []
         board = [ self.boards[QUADRANT[i]] for i in range(len(QUADRANT)) ]
         for direction in SHIFT:
@@ -139,23 +141,24 @@ class State:
                     block[0:2][QUADRANT[p]] = np.stack((passives1,passives2))
                     for a in COMBOS[self.player][p]:
                         aggros1, aggros2 = self.legal_aggros(board[a], direction)
-                        if not passives2.any():
-                            aggros2 = np.zeros_like(aggros2) # can't play aggro move if couldn't play passive
+                        if not passives2.any(): # if couldn't play passive
+                            aggros2 = np.zeros(aggros2.shape, aggros2.dtype) # can't play aggro move 
                         block[2:4][QUADRANT[a]] = np.stack((aggros1,aggros2))
             output.append(block)
         return np.concatenate(output)
 
-    def make_move(self, p_end: tuple[int], a_end: tuple[int], direction: str, distance: int) -> np.ndarray:
+    def make_move(self, passive_end: tuple[int], aggro_end: tuple[int], direction: str, distance: int) -> np.ndarray:
         '''Returns a copy of the boards with (an assumed) legal passive and aggressive move having been applied.
         @param p_end: (x_1, y_1) coordinates representing the ending square of the legal passive move
         @param a_end: (x_2, y_2) coordinates representing the ending square of the legal aggressive move
-        @returns new_boards: 2x8x8 ndarray'''
-        a, b = SHIFT[direction]; offset1 = (0, a, b)
+        @return new_boards: 2x8x8 ndarray'''
+        a, b = SHIFT[direction]
+        offset1 = (0, a, b)
         neg_offset = negate(tuple(map((distance).__mul__, offset1)))
         new_boards: np.ndarray = self.boards.copy()
         # turn on ending coordinates in 2x8x8 zeros ndarray
-        endings = np.zeros_like(new_boards)
-        x1, y1 = p_end; x2, y2 = a_end
+        endings = np.zeros(new_boards.shape, new_boards.dtype)
+        x1, y1 = passive_end; x2, y2 = aggro_end
         endings[self.player, y1, x1] = 1
         endings[:, y2, x2] = 1
         startings = self.shift(endings, neg_offset)
@@ -167,19 +170,48 @@ class State:
         if collision.any(): 
             landing = self.shift(endings, (a,b))
             # mask out when landing on other boards
-            mask = np.zeros_like(landing)
-            x2 = 4*(x2//4); y2 = 4*(y2//4)
-            mask[slice(y2,y2+4), slice(x2,x2+4)] = 1
+            mask = np.zeros(landing.shape, landing.dtype)
+            mask[QUADRANT[quadrant(x2,y2)]] = 1 # quadrant of board
             landing &= mask
             new_boards[1 - self.player] ^= (collision | landing) # update opponent pieces
         assert new_boards.shape == (2,8,8)
         return new_boards
 
+    def actions_to_move(self, action1: tuple[int], action2: tuple[int]):
+        '''Map the (z, y, x) coordinates of actions within the 32x8x8 `legal actions` ndarray into a form which the `make_move` function uses.
+        @param action1: (z1, y1, x1)
+        @param action2: (z2, y2, x2)'''
+        z1, y1, x1 = action1; z2, y2, x2 = action2
+        distance1 = (z1%2)+1
+        distance2 = (z2%2)+1
+        directions = list(SHIFT)
+        direction1 = directions[z1//4]
+        direction2 = directions[z2//4]
+        return
+    
+    def random_action(self, legal_actions: np.ndarray) -> tuple[tuple[int],tuple[int]]:
+        '''
+        Randomly select a passive and aggressive action from all legal actions.
+        @return (z1, y1, x1): Coordinates of a random passive move
+        @return (z2, y2, x2): Coordinates of a random aggressive move
+        '''
+        aggro_mask = np.zeros(legal_actions.shape, legal_actions.dtype)
+        aggro_mask[2::4] = 1; aggro_mask[3::4] = 1
+        aggro_mask &= legal_actions
+        a_coords = np.argwhere(aggro_mask).tolist()
+        z2, y2, x2 = choice(a_coords)
+        q = quadrant(x2,y2)
+        p = [i for i in COMBOS[self.player] if q in COMBOS[self.player][i]][0]
+        z1 = z2-2
+        passive_options = legal_actions[[z1]]
+        passive_mask = np.zeros(passive_options.shape, passive_options.dtype)
+        passive_mask[QUADRANT[p]] = 1
+        passive_options &= passive_mask
+        p_coords = np.argwhere(passive_options).tolist()
+        _, y1, x1 = choice(p_coords)
+        return (z1, y1, x1), (z2, y2, x2)
+
 if __name__ == '__main__':
-    #a = np.random.randint(2, size=(2,8,8), dtype=np.uint8)
-    #b1 = a[1,:,:]
-    #b2 = a[0,:,:]
-    #a[1,:,:] = ( b2 & b1) ^ b1
     a = [[[1, 0, 0, 0, 1, 0, 0, 0],
     [0, 0, 0, 1, 1, 1, 0, 0],
     [0, 0, 1, 0, 0, 0, 1, 0],
@@ -199,9 +231,6 @@ if __name__ == '__main__':
     a = np.asarray(a, dtype=np.uint8)
     game = State(a)
     game.render()
-    #x = game.legals()
-    x = game.make_move((1,0), (6,1), 'N', 2)
-    game.boards = x
-    game.render()
-
-pass
+    l = game.legal_actions()
+    r1, r2 = game.random_action(l)
+    pass
