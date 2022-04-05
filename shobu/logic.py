@@ -36,18 +36,12 @@ class State:
         else:
             self.boards: np.ndarray = np.asarray(boards, dtype=np.uint8)
             assert self.boards.shape == (2,8,8), 'Board not the right shape.'
-            
-    def render(self) -> None:
-        'Prints the current game boards.'
-        m = (2*self.boards[0] + self.boards[1]).astype(str)
-        m = np.insert(m, 4, 8*['|'], 1)
-        m = np.insert(m, 4, 9*['-'], 0)
-        txt: str = '\n ' + np.array_str(m)
-        txt = txt.replace('\'','')
-        txt = txt.replace('[','')
-        txt = txt.replace(']','')
-        out = txt.splitlines(True)
-        return print(*out) 
+    
+    def __eq__ (self, other):
+        if isinstance(other, State):
+            return (self.boards == other.boards).all() and (self.current_player == other.current_player)
+        else:
+            return NotImplementedError 
 
     def _shift(self, array: np.ndarray, offset: tuple[int]) -> np.ndarray:
         'Returns a copy of an `array` shifted (without rollover) by `offset`.'
@@ -120,7 +114,7 @@ class State:
         assert output.any(), 'No legal actions'
         return output
 
-    def _action_to_move(self, z1:int, y1:int, x1:int, z2:int, y2:int, x2:int) -> np.ndarray:
+    def play_action(self, z1:int, y1:int, x1:int, z2:int, y2:int, x2:int) -> np.ndarray:
         '''Returns a copy of the boards with (an assumed) legal passive and aggressive move having been applied.
         @param (z1, y1, x1): coordinates representing the ending square of the legal passive move
         @param (z2, y2, x2): coordinates representing the ending square of the legal aggressive move
@@ -144,28 +138,33 @@ class State:
             landing = self._shift(a_endings, direction)
             # mask out when landing on other boards
             mask = np.zeros(landing.shape, landing.dtype)
-            mask[State.QUADRANT[self._quadrant(x2,y2)][1:]] = 1 # quadrant of board
+            mask[State.QUADRANT[x2//4 + 2*(y2//4)][1:]] = 1 # quadrant of board
             landing &= mask
             new_boards[1 - self.current_player] ^= (collision | landing) # update opponent pieces
         assert new_boards.shape == (2,8,8)
         return new_boards
 
-    def random_action(self, legal_actions: np.ndarray):
-        '''Randomly select a passive and aggressive action from all legal actions.
-        @return new_boards: 2x8x8 ndarray from `_action_to_move()`'''
-        z2, y2, x2 = choice(np.argwhere(State.AGGRO_MASK & legal_actions).tolist())
-        p_board = State.A2P[self.current_player][self._quadrant(x2,y2)]
-        z1 = z2 - 2
-        p_options = legal_actions[z1]
-        p_mask = np.zeros(p_options.shape, p_options.dtype)[None,:]
-        p_mask[State.QUADRANT[p_board]] = 1
-        p_options &= p_mask[0]
-        y1, x1 = choice(np.argwhere(p_options).tolist())
-        return self._action_to_move(z1, y1, x1, z2, y2, x2)
+    def render(self) -> None:
+        'Prints the current game boards.'
+        m = (2*self.boards[0] + self.boards[1]).astype(str)
+        m = np.insert(m, 4, 8*['|'], 1)
+        m = np.insert(m, 4, 9*['-'], 0)
+        txt: str = '\n ' + np.array_str(m)
+        txt = txt.replace('\'','')
+        txt = txt.replace('[','')
+        txt = txt.replace(']','')
+        out = txt.splitlines(True)
+        return print(*out)
+    
+    @staticmethod
+    def _negate(offset: tuple[int]) -> tuple[int]:
+        'Returns the `offset` in the opposite direction.'
+        return tuple(map((-1).__mul__, offset))
 
-    def human_action(self, legal_actions: np.ndarray):
+class Human:
+    def policy(self, legal_actions: np.ndarray, current_player: bool) -> tuple[int, int, int, int, int, int]:
         '''Select a passive and aggressive action from all legal actions.
-        @return new_boards: 2x8x8 ndarray from `_action_to_move()`'''
+        @return z1, y1, x1, z2, y2, x2: passive and aggressive actions defined using coordinates'''
         def get_choice(choices: list[str], prompt: str = '') -> str:
             'General user input handling function.'
             choice = ''
@@ -183,35 +182,42 @@ class State:
         z1 = z2 - 2
         p_options = legal_actions[z1]
         p_mask = np.zeros(p_options.shape, p_options.dtype)[None,:]
-        p_board = State.A2P[self.current_player][self._quadrant(x2,y2)]
+        p_board = State.A2P[current_player][x2//4 + 2*(y2//4)] 
         p_mask[State.QUADRANT[p_board]] = 1
         p_options &= p_mask[0]
         D = np.argwhere(p_options)
         p_coord = get_choice([ f'({x} {y})' for y, x in D], 'passive move (x y) ending square') # choose passive ending
         x1 = int(p_coord[1]); y1 = int(p_coord[3])
-        return self._action_to_move(z1, y1, x1, z2, y2, x2)
+        return z1, y1, x1, z2, y2, x2
 
-    @staticmethod
-    def _negate(offset: tuple[int]) -> tuple[int]:
-        'Returns the `offset` in the opposite direction.'
-        return tuple(map((-1).__mul__, offset))
-
-    @staticmethod
-    def _quadrant(x: int, y: int) -> int:
-        'Maps (x, y) coordinates to board quadrants 0 to 3.'
-        return x//4 + 2*(y//4)
+class Random:
+    def policy(self, legal_actions: np.ndarray, current_player: bool) -> tuple[int, int, int, int, int, int]:
+        '''Randomly select a passive and aggressive action from all legal actions.
+        @return z1, y1, x1, z2, y2, x2: passive and aggressive actions defined using coordinates'''
+        z2, y2, x2 = choice(np.argwhere(State.AGGRO_MASK & legal_actions).tolist())
+        p_board = State.A2P[current_player][x2//4 + 2*(y2//4)]
+        z1 = z2 - 2
+        p_options = legal_actions[z1]
+        p_mask = np.zeros(p_options.shape, p_options.dtype)[None,:]
+        p_mask[State.QUADRANT[p_board]] = 1
+        p_options &= p_mask[0]
+        y1, x1 = choice(np.argwhere(p_options).tolist())
+        return z1, y1, x1, z2, y2, x2 
 
 
 class Game:
-    def __init__(self, player1: object, player2: object, render: bool) -> None:
-        self.players = {player2, player1}
+    def __init__(self, player1: object, player2: object, render: bool = False) -> None:
+        self.players = [player2, player1] # index 1 for player 1, matching State.current_player
         self.render = render
         self.reset()
 
-    def reset(self):
-        self.history = deque()
-        self.state = State()
+    def reset(self) -> None:
+        self.history: deque[State] = deque( State() )
         return
+
+    @property
+    def state(self):
+        return self.history[-1]
 
     def is_terminal(boards: np.ndarray, num_legal_actions, history: deque):
         '''There are 3 losing conditions:
@@ -222,37 +228,41 @@ class Game:
         @return reward: player1 win = `1`, player1 loss = `-1`, non-terminal = `0`'''
         NotImplemented
         return
-    
-    def play(self):
+
+    def play_game(self) -> int:
         while True:
             if self.render:
                 self.state.render()
             l = self.state.legal_actions()
-            self.state.boards = self.state.random_action(l)
-            if self.is_terminal():
-                break
-            self.state.current_player = 1 - self.state.current_player # change current_player
-        return
+            reward = self.is_terminal()
+            if reward:
+                self.reset()
+                return reward
+            c = self.state.current_player
+            z1, y1, x1, z2, y2, x2 = self.players[c].policy(l, c)
+            new_boards = self.state.play_action(z1, y1, x1, z2, y2, x2)
+            if len(self.history) >= 5:
+                self.history.popleft
+            self.history.append(State(new_boards, current_player=1-c))
 
-def int_to_array(bits: int) -> np.ndarray:
-    'Convert a bitboard to a ndarray.'
-    bytes = bits.to_bytes(length=3, byteorder='little')
-    byte_array = np.frombuffer(bytes, dtype=np.uint8)
-    bit_array = np.unpackbits(byte_array, bitorder='little').reshape((4, 6))[:, :4]
-    return bit_array
+    @staticmethod
+    def int_to_array(bits: int) -> np.ndarray:
+        'Convert a bitboard to a ndarray.'
+        bytes = bits.to_bytes(length=3, byteorder='little')
+        byte_array = np.frombuffer(bytes, dtype=np.uint8)
+        bit_array = np.unpackbits(byte_array, bitorder='little').reshape((4, 6))[:, :4]
+        return bit_array
 
-def array_to_int(bit_array: np.ndarray) -> int:
-    'Convert a array to a bitboard, used for hashing and storage.'
-    pad = np.zeros((4, 6), dtype=np.uint8)
-    pad[:, :4] = bit_array
-    flat = np.ravel(pad)
-    pack = np.packbits(flat, bitorder='little')
-    num = int.from_bytes(pack, byteorder='little')
-    return num
-
-def get_action_size():
-    return (32,8,8)
+    @staticmethod
+    def array_to_int(bit_array: np.ndarray) -> int:
+        'Convert a array to a bitboard, used for hashing and storage.'
+        pad = np.zeros((4, 6), dtype=np.uint8)
+        pad[:, :4] = bit_array
+        flat = np.ravel(pad)
+        pack = np.packbits(flat, bitorder='little')
+        num = int.from_bytes(pack, byteorder='little')
+        return num
 
 if __name__ == '__main__':
-    s = State()
+    game = Game(Random, Random, True)
     pass
