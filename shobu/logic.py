@@ -7,24 +7,25 @@ from random import choice, shuffle
 import numpy as np
 from collections import deque
 
-P2A = ( # mapping of passive to aggro board combinations
-    { 0: (1, 2), 1: (0, 3)}, # current_player 2
-    { 2: (0, 3), 3: (1, 2)} )# current_player 1
-A2P = tuple( {aggro:passive for passive in side for aggro in side[passive]} for side in P2A )
-DIRECTIONS = ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW')
-OFFSETS = ((-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1)) # indices match directions
-QUADRANT = ( # Get an object that will slice an nx8x8 ndarray into nx4x4, via the indices 0 to 3.
-    (slice(None), slice(0,4), slice(0,4)),
-    (slice(None), slice(0,4), slice(4,8)),
-    (slice(None), slice(4,8), slice(0,4)),
-    (slice(None), slice(4,8), slice(4,8)) )
-AGGRO_MASK = np.zeros((32,8,8), dtype=np.uint8)
-AGGRO_MASK[2::4] = 1; AGGRO_MASK[3::4] = 1 # used to mask legal actions
-
 class State:
     '''4 Shōbu 4x4 boards.
     @param boards: 2x8x8 np.ndarray or None
     @param current_player: 1 for player1, 0 for player2.'''
+    # The following are constants shared between all State instances used to speed up calculations
+    P2A = ( # mapping of passive to aggro board (indices) combinations
+        { 0: (1, 2), 1: (0, 3)}, # current_player 2
+        { 2: (0, 3), 3: (1, 2)} )# current_player 1
+    A2P = tuple( {aggro:passive for passive in side for aggro in side[passive]} for side in P2A ) # reverse mapping of `P2A`
+    DIRECTIONS = ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW')
+    OFFSETS = ((-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1)) # indices match `DIRECTIONS`
+    QUADRANT = ( # Used to slice an nx8x8 ndarray into nx4x4, via the board indices 0 to 3.
+        (slice(None), slice(0,4), slice(0,4)),
+        (slice(None), slice(0,4), slice(4,8)),
+        (slice(None), slice(4,8), slice(0,4)),
+        (slice(None), slice(4,8), slice(4,8)) )
+    AGGRO_MASK = np.zeros((32,8,8), dtype=np.uint8)
+    AGGRO_MASK[2::4] = 1; AGGRO_MASK[3::4] = 1 # used to mask legal actions
+
     def __init__(self, boards: np.ndarray = None, current_player: int = 1) -> None:
         assert current_player in (0,1), 'Player parameter incorrect.'
         self.current_player = current_player
@@ -101,18 +102,18 @@ class State:
 
         Legal and illegal actions are given a value of 1 and 0 respectively in the `output`. The `output` can be used to directly mask the policy head of the neural network for legal actions.'''
         output = []
-        board = [ self.boards[QUADRANT[i]] for i in range(4) ]
-        for offset in OFFSETS:
+        board = [ self.boards[State.QUADRANT[i]] for i in range(4) ]
+        for offset in State.OFFSETS:
             block = np.zeros(shape=(4,8,8), dtype=np.uint8)
-            for p_board in P2A[self.current_player]:
+            for p_board in State.P2A[self.current_player]:
                 passives1, passives2 = self._legal_passives(board[p_board], offset)
                 if passives1.any():
-                    block[0:2][QUADRANT[p_board]] = np.stack((passives1,passives2))
-                    for a_board in P2A[self.current_player][p_board]:
+                    block[0:2][State.QUADRANT[p_board]] = np.stack((passives1,passives2))
+                    for a_board in State.P2A[self.current_player][p_board]:
                         aggros1, aggros2 = self._legal_aggros(board[a_board], offset)
                         if not passives2.any(): # if couldn't play passive
                             aggros2 = np.zeros(aggros2.shape, aggros2.dtype) # can't play aggro move 
-                        block[2:4][QUADRANT[a_board]] = np.stack((aggros1,aggros2))
+                        block[2:4][State.QUADRANT[a_board]] = np.stack((aggros1,aggros2))
             output.append(block)
         output = np.concatenate(output)
         assert output.shape == (32,8,8), 'Shape of legal actions is wrong'
@@ -126,7 +127,7 @@ class State:
         @return new_boards: 2x8x8 ndarray'''
         assert z1 + 2 == z2
         distance = (z1 % 2) + 1
-        direction =  OFFSETS[z1//4]
+        direction = State.OFFSETS[z1//4]
         new_boards = self.boards.copy()
         endings = np.zeros(new_boards.shape, new_boards.dtype)
         endings[self.current_player, y1, x1] = 1 # turn on ending coordinates in 2x8x8 zeros ndarray
@@ -143,7 +144,7 @@ class State:
             landing = self._shift(a_endings, direction)
             # mask out when landing on other boards
             mask = np.zeros(landing.shape, landing.dtype)
-            mask[QUADRANT[self._quadrant(x2,y2)][1:]] = 1 # quadrant of board
+            mask[State.QUADRANT[self._quadrant(x2,y2)][1:]] = 1 # quadrant of board
             landing &= mask
             new_boards[1 - self.current_player] ^= (collision | landing) # update opponent pieces
         assert new_boards.shape == (2,8,8)
@@ -152,12 +153,12 @@ class State:
     def random_action(self, legal_actions: np.ndarray):
         '''Randomly select a passive and aggressive action from all legal actions.
         @return new_boards: 2x8x8 ndarray from `_action_to_move()`'''
-        z2, y2, x2 = choice(np.argwhere(AGGRO_MASK & legal_actions).tolist())
-        p_board = A2P[self.current_player][self._quadrant(x2,y2)]
+        z2, y2, x2 = choice(np.argwhere(State.AGGRO_MASK & legal_actions).tolist())
+        p_board = State.A2P[self.current_player][self._quadrant(x2,y2)]
         z1 = z2 - 2
         p_options = legal_actions[z1]
         p_mask = np.zeros(p_options.shape, p_options.dtype)[None,:]
-        p_mask[QUADRANT[p_board]] = 1
+        p_mask[State.QUADRANT[p_board]] = 1
         p_options &= p_mask[0]
         y1, x1 = choice(np.argwhere(p_options).tolist())
         return self._action_to_move(z1, y1, x1, z2, y2, x2)
@@ -172,7 +173,7 @@ class State:
                 choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
             return choice
         A = np.split(legal_actions, 8, axis=0) # split legal actions by direction
-        q = DIRECTIONS.index( get_choice([DIRECTIONS[i] for i in range(8) if A[i].any()], 'direction') ) # choose a direction
+        q = State.DIRECTIONS.index( get_choice([State.DIRECTIONS[i] for i in range(8) if A[i].any()], 'direction') ) # choose a direction
         B = A[q] 
         w = int(get_choice([ str(i-1) for i in [2,3] if B[i].any() ], 'distance') ) + 1 # choose a distance
         z2 = 4*q + w
@@ -182,8 +183,8 @@ class State:
         z1 = z2 - 2
         p_options = legal_actions[z1]
         p_mask = np.zeros(p_options.shape, p_options.dtype)[None,:]
-        p_board = A2P[self.current_player][self._quadrant(x2,y2)]
-        p_mask[QUADRANT[p_board]] = 1
+        p_board = State.A2P[self.current_player][self._quadrant(x2,y2)]
+        p_mask[State.QUADRANT[p_board]] = 1
         p_options &= p_mask[0]
         D = np.argwhere(p_options)
         p_coord = get_choice([ f'({x} {y})' for y, x in D], 'passive move (x y) ending square') # choose passive ending
@@ -202,8 +203,9 @@ class State:
 
 
 class Game:
-    def __init__(self, player1: object, player2: object) -> None:
+    def __init__(self, player1: object, player2: object, render: bool) -> None:
         self.players = {player2, player1}
+        self.render = render
         self.reset()
 
     def reset(self):
@@ -221,9 +223,10 @@ class Game:
         NotImplemented
         return
     
-    def ply(self):
+    def play(self):
         while True:
-            self.state.render()
+            if self.render:
+                self.state.render()
             l = self.state.legal_actions()
             self.state.boards = self.state.random_action(l)
             if self.is_terminal():
@@ -250,4 +253,6 @@ def array_to_int(bit_array: np.ndarray) -> int:
 def get_action_size():
     return (32,8,8)
 
-pass
+if __name__ == '__main__':
+    s = State()
+    pass
