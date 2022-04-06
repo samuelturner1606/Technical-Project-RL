@@ -6,6 +6,65 @@ Board game engine implementation of Shōbu using bitwise operators.
 from random import choice, shuffle
 import numpy as np
 
+'''Constants used for testing:'''
+MAX_ACTIONS = [
+    [[1,1,1,1,1,1,1,1],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0],
+    [1,1,1,1,1,1,1,1],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0]],
+    
+    [[0,0,0,0,0,0,0,0],
+    [0,1,0,0,0,1,0,0],
+    [0,1,0,1,0,1,0,1],
+    [0,1,0,0,0,1,0,0],
+    [0,0,0,0,0,0,0,0],
+    [0,1,0,0,0,1,0,0],
+    [0,1,0,1,0,1,0,1],
+    [0,1,0,0,0,1,0,0]]
+    ]
+STALEMATE = [
+    [[0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,1,0,0,0,0],
+    [0,0,0,0,1,0,0,0],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0],
+    [1,0,0,0,0,0,0,0],
+    [1,0,0,0,0,0,1,1]],
+    
+    [[1,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,1],
+    [1,0,0,0,0,0,1,0],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,1,1,0,0,0],
+    [0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0]]
+    ]
+NO_MOVES = [
+        [[0,0,1,0,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,0,1,0,0],
+        [0,0,0,0,1,1,0,0],
+        [0,0,0,0,0,0,0,1],
+        [0,0,1,0,0,1,0,0],
+        [0,0,0,0,0,1,0,0],
+        [0,0,0,0,0,0,0,0]],
+        
+        [[0,0,0,0,0,0,0,1],
+        [0,0,0,0,0,0,0,0],
+        [1,0,0,0,0,0,0,0],
+        [1,0,0,0,0,0,0,0],
+        [0,1,1,1,0,0,0,0],
+        [0,0,0,1,0,0,0,0],
+        [0,0,0,0,0,0,0,0],
+        [0,0,0,0,1,1,0,0]]
+        ]
+
 class State:
     '''4 Shōbu 4x4 boards.
     @param boards: 2x8x8 np.ndarray or None
@@ -102,12 +161,14 @@ class State:
             for p_board in State.P2A[self.current_player]:
                 passives1, passives2 = self._legal_passives(board[p_board], offset)
                 if passives1.any():
-                    block[0:2][State.QUADRANT[p_board]] = np.stack((passives1,passives2))
                     for a_board in State.P2A[self.current_player][p_board]:
                         aggros1, aggros2 = self._legal_aggros(board[a_board], offset)
-                        if not passives2.any(): # if couldn't play passive
-                            aggros2 = np.zeros(aggros2.shape, aggros2.dtype) # can't play aggro move 
-                        block[2:4][State.QUADRANT[a_board]] = np.stack((aggros1,aggros2))
+                        if aggros1.any():
+                            block[State.QUADRANT[p_board]][0] = passives1
+                            block[State.QUADRANT[a_board]][2] = aggros1
+                        if aggros2.any() and passives2.any():
+                            block[State.QUADRANT[p_board]][1] = passives2
+                            block[State.QUADRANT[a_board]][3] = aggros2
                         num_actions += np.count_nonzero(passives1)*np.count_nonzero(aggros1) + np.count_nonzero(passives2)*np.count_nonzero(aggros2)
             output.append(block)
         output = np.concatenate(output)
@@ -214,15 +275,16 @@ class Game:
         self._reset()
 
     def _reset(self) -> None:
-        root = State() 
-        self.history: list[State] = [root]
+        self.history: list[State] = [ State() ] # used for repetition rule
+        self.plies = 0 # used for max game length rule
         return
 
     def _is_terminal(self, legal_actions: np.ndarray):
-        '''There are 3 losing conditions:
+        '''There are 4 losing conditions:
         - A player without stones on one of the boards
         - A player has no legal moves
         - A player has repeated a position within the last 5 moves
+        - The game has lasted 150 plies in which case player 1 losess
 
         @return reward: player1 win = `1`, player1 loss = `-1`, non-terminal = `0`
         ### Note
@@ -233,6 +295,8 @@ class Game:
             return Game.REWARD[s.current_player] # opponent caused repetition on previous turn
         elif (not legal_actions.any()):
             return Game.REWARD[opponent]
+        elif self.plies >= 150:
+            return -1
         for i in 0,1,2,3:
             b = s.boards[State.QUADRANT[i]][s.current_player]
             if not b.any():
@@ -247,14 +311,16 @@ class Game:
             l = self.history[-1].legal_actions()
             reward = self._is_terminal(l)
             if reward:
+                print(self.plies)
                 self._reset()
                 return reward
             c = self.history[-1].current_player
             z1, y1, x1, z2, y2, x2 = self.players[c].policy(l, c)
             new_boards = self.history[-1].play_action(z1, y1, x1, z2, y2, x2)
-            if len(self.history) > 5:
+            if len(self.history) > 10:
                 self.history.pop(0)
             self.history.append( State(new_boards, current_player=1-c) )
+            self.plies += 1
 
     @staticmethod
     def int_to_array(bits: int) -> np.ndarray:
@@ -278,4 +344,5 @@ if __name__ == '__main__':
     game = Game(Random(), Random(), True)
     for _ in range(100):
         reward = game.play()
+        print(reward)
     pass
