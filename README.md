@@ -8,7 +8,7 @@ I recommended using the python -m switch terminal command when running files tha
 Example command line usage:
 
 ```
-python -m shobu.small.logic"
+python -m Shobu.logic"
 ```
 
 Alternatively to accomplish this, a VSCode launch.json file can be used to run and debug configurations of python modules.
@@ -23,7 +23,7 @@ Example VSCode launch.json:
             "name": "Python: Module",
             "type": "python",
             "request": "launch",
-            "module": "shobu.small.logic",
+            "module": "Shobu.logic",
             "justMyCode": true
         }
     ]
