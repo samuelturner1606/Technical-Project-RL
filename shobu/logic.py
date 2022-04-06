@@ -5,7 +5,6 @@ Board game engine implementation of Shōbu using bitwise operators.
 '''
 from random import choice, shuffle
 import numpy as np
-from collections import deque
 
 class State:
     '''4 Shōbu 4x4 boards.
@@ -95,8 +94,9 @@ class State:
         - (y, x) indicates the ending square of a move relative from the top-left corner of the boards
 
         Legal and illegal actions are given a value of 1 and 0 respectively in the `output`. The `output` can be used to directly mask the policy head of the neural network for legal actions.'''
+        num_actions = 0
         output = []
-        board = [ self.boards[State.QUADRANT[i]] for i in range(4) ]
+        board = [ self.boards[State.QUADRANT[i]] for i in (0,1,2,3) ]
         for offset in State.OFFSETS:
             block = np.zeros(shape=(4,8,8), dtype=np.uint8)
             for p_board in State.P2A[self.current_player]:
@@ -108,10 +108,11 @@ class State:
                         if not passives2.any(): # if couldn't play passive
                             aggros2 = np.zeros(aggros2.shape, aggros2.dtype) # can't play aggro move 
                         block[2:4][State.QUADRANT[a_board]] = np.stack((aggros1,aggros2))
+                        num_actions += np.count_nonzero(passives1)*np.count_nonzero(aggros1) + np.count_nonzero(passives2)*np.count_nonzero(aggros2)
             output.append(block)
         output = np.concatenate(output)
+        print(f'Number of actions: {num_actions}')
         assert output.shape == (32,8,8), 'Shape of legal actions is wrong'
-        assert output.any(), 'No legal actions'
         return output
 
     def play_action(self, z1:int, y1:int, x1:int, z2:int, y2:int, x2:int) -> np.ndarray:
@@ -206,44 +207,54 @@ class Random:
 
 
 class Game:
+    REWARD = (-1, 1)
     def __init__(self, player1: object, player2: object, render: bool = False) -> None:
         self.players = [player2, player1] # index 1 for player 1, matching State.current_player
         self.render = render
-        self.reset()
+        self._reset()
 
-    def reset(self) -> None:
-        self.history: deque[State] = deque( State() )
+    def _reset(self) -> None:
+        root = State() 
+        self.history: list[State] = [root]
         return
 
-    @property
-    def state(self):
-        return self.history[-1]
-
-    def is_terminal(boards: np.ndarray, num_legal_actions, history: deque):
+    def _is_terminal(self, legal_actions: np.ndarray):
         '''There are 3 losing conditions:
-        - A current_player without stones on one of the boards
-        - A current_player has no legal moves
-        - A current_player has repeated a position within the last 5 moves
-        
-        @return reward: player1 win = `1`, player1 loss = `-1`, non-terminal = `0`'''
-        NotImplemented
-        return
+        - A player without stones on one of the boards
+        - A player has no legal moves
+        - A player has repeated a position within the last 5 moves
 
-    def play_game(self) -> int:
+        @return reward: player1 win = `1`, player1 loss = `-1`, non-terminal = `0`
+        ### Note
+        Checking for terminal conditions is done just before a player makes their move in case they have no legal moves.'''
+        s = self.history[-1]
+        opponent = 1 - s.current_player
+        if (s in self.history[:-1]):
+            return Game.REWARD[s.current_player] # opponent caused repetition on previous turn
+        elif (not legal_actions.any()):
+            return Game.REWARD[opponent]
+        for i in 0,1,2,3:
+            b = s.boards[State.QUADRANT[i]][s.current_player]
+            if not b.any():
+                return Game.REWARD[opponent] # opponent won on previous turn
+        return 0  # game not over
+        
+    def play(self) -> int:
+        'Plays a Shōbu game, then resets itself and returns the reward.'
         while True:
             if self.render:
-                self.state.render()
-            l = self.state.legal_actions()
-            reward = self.is_terminal()
+                self.history[-1].render()
+            l = self.history[-1].legal_actions()
+            reward = self._is_terminal(l)
             if reward:
-                self.reset()
+                self._reset()
                 return reward
-            c = self.state.current_player
+            c = self.history[-1].current_player
             z1, y1, x1, z2, y2, x2 = self.players[c].policy(l, c)
-            new_boards = self.state.play_action(z1, y1, x1, z2, y2, x2)
-            if len(self.history) >= 5:
-                self.history.popleft
-            self.history.append(State(new_boards, current_player=1-c))
+            new_boards = self.history[-1].play_action(z1, y1, x1, z2, y2, x2)
+            if len(self.history) > 5:
+                self.history.pop(0)
+            self.history.append( State(new_boards, current_player=1-c) )
 
     @staticmethod
     def int_to_array(bits: int) -> np.ndarray:
@@ -264,5 +275,7 @@ class Game:
         return num
 
 if __name__ == '__main__':
-    game = Game(Random, Random, True)
+    game = Game(Random(), Random(), True)
+    for _ in range(100):
+        reward = game.play()
     pass
