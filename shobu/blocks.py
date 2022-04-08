@@ -83,3 +83,6 @@ def make_network(num_layers: int, output_channels: int, bottleneck_channels: int
         make_last_op=make_conv(output_channels, kernel_shape=3),
         name=f'res_{i}'))
   return blocks
+
+
+b = make_network(6, 256, 128, 8)

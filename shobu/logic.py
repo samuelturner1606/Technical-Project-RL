@@ -322,24 +322,6 @@ class Game:
             self.history.append( State(new_boards, current_player=1-c) )
             self.plies += 1
 
-    @staticmethod
-    def int_to_array(bits: int) -> np.ndarray:
-        'Convert a bitboard to a ndarray.'
-        bytes = bits.to_bytes(length=3, byteorder='little')
-        byte_array = np.frombuffer(bytes, dtype=np.uint8)
-        bit_array = np.unpackbits(byte_array, bitorder='little').reshape((4, 6))[:, :4]
-        return bit_array
-
-    @staticmethod
-    def array_to_int(bit_array: np.ndarray) -> int:
-        'Convert a array to a bitboard, used for hashing and storage.'
-        pad = np.zeros((4, 6), dtype=np.uint8)
-        pad[:, :4] = bit_array
-        flat = np.ravel(pad)
-        pack = np.packbits(flat, bitorder='little')
-        num = int.from_bytes(pack, byteorder='little')
-        return num
-
 if __name__ == '__main__':
     game = Game(Random(), Random(), True)
     for _ in range(100):
