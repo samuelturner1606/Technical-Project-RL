@@ -30,4 +30,23 @@ def l(colour: bool):
     return
 
 # final convolution of 16*c (c = board combos) filters. 
-    
+
+class Node:
+  def __init__(self, prior: float):
+    self.visit_count = 0
+    self.prior = prior
+    self.value_sum = 0
+    self.children = {}
+    self.reward = 0
+
+  def expanded(self) -> bool:
+    return len(self.children) > 0
+
+  def value(self) -> float:
+    if self.visit_count == 0:
+      return 0
+    return self.value_sum / self.visit_count
+
+a = np.random.randint(2, size=(8, 2, 8, 8, 8, 8), dtype=np.uint8)
+c = tf.convert_to_tensor(a, dtype=tf.float32)
+pass

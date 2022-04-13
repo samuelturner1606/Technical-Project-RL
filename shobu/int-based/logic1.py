@@ -124,7 +124,7 @@ class State:
         x3 = self._bitshift(x2, direction, 1)
         # not pushing more than one stone or your own stones
         legal_aggro1 = ~( (x1 & x2) | p2 )
-        aggro1 = self._bitshift(p2, direction, 1) & legal_aggro1 
+        aggro1 = p3 & legal_aggro1 
         legal_aggro2 = ~( (x2|x3) & (x1|x2|p3) & (x1|x3|p2) )
         aggro2 = self._bitshift(p2, direction, 2) & legal_aggro2
         return aggro1, aggro2
