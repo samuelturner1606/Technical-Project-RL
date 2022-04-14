@@ -142,48 +142,47 @@ class State:
 
     def legal_actions(self) -> np.ndarray:
         '''Find all legal actions on all boards, in all directions and distances. Can be used to directly mask the policy head of the neural network for legal actions.
-        @return output: ndarray indexed by (direction, combo, distance, aggro_y, aggro_x, passive_y, passive_x)'''
-        output = np.zeros(shape=(8,4,2,4,4,4,4), dtype=np.uint8)
+        @return output: ndarray indexed by (combo, direction, distance, aggro_y, aggro_x, passive_y, passive_x)'''
+        output = np.zeros(shape=(4,8,2,4,4,4,4), dtype=np.uint8)
         for d, offset in enumerate(State.OFFSETS):
             for p in State.P2A[self.current_player]:
                 passives1, passives2 = self._legal_passives(self.boards[State.QUADRANT[p]], offset)
                 if passives1.any():
                     for a in State.P2A[self.current_player][p]:
                         aggros1, aggros2 = self._legal_aggros(self.boards[State.QUADRANT[a]], offset)
-                        temp_aggros = np.zeros(shape=(8,4,2,4,4), dtype=np.uint8)
+                        temp_aggros = np.zeros(shape=(4,8,2,4,4), dtype=np.uint8)
                         if aggros1.any():
-                            output[d, a, 0, ...] = passives1
-                            temp_aggros[d, a, 0, ...] = aggros1
+                            output[a, d, 0, ...] = passives1
+                            temp_aggros[a, d, 0, ...] = aggros1
                         if aggros2.any() and passives2.any():
-                            output[d, a, 1, ...] = passives2
-                            temp_aggros[d, a, 1, ...] = aggros2
-                        output[d, a, ...] &= temp_aggros[d, a, ..., None, None] # temp_aggros is broadcasted to the shape of output
+                            output[a, d, 1, ...] = passives2
+                            temp_aggros[a, d, 1, ...] = aggros2
+                        output[a, d, ...] &= temp_aggros[a, d, ..., None, None] # temp_aggros is broadcasted to the shape of output
         n = np.argwhere(output)
         print(f'Number of actions: {len(n)}')
-        assert output.shape == (8,4,2,4,4,4,4), 'Shape of legal actions is wrong'
+        assert output.shape == (4,8,2,4,4,4,4), 'Shape of legal actions is wrong'
         return output
     
     def play_action(self, action: tuple[int]) -> np.ndarray:
         '''Returns a copy of the boards with (an assumed) legal passive and aggressive move having been applied.
         @return new_boards: 2x8x8 ndarray'''
         assert len(action) == 7
-        direction, a, distance, a_y, a_x, p_y, p_x = action
+        a, direction, distance, a_y, a_x, p_y, p_x = action
         new_boards = self.boards.copy()
         offset = State.OFFSETS[direction]
         neg_offset = tuple(map((-(distance+1)).__mul__, offset))
-        
+        # construct boards from coords
         p_end = np.zeros((4,4), new_boards.dtype)
         a_end = p_end.copy()
         p_end[p_y, p_x] = 1
         a_end[a_y, a_x] = 1
-
         p = State.A2P[self.current_player][a]
         p_board = new_boards[State.QUADRANT[p]]
         a_board = new_boards[State.QUADRANT[a]]
-
+        # update current player's stones
         p_board[self.current_player] ^= (self._shift(p_end, neg_offset) | p_end)
         a_board[self.current_player] ^= (self._shift(a_end, neg_offset) | a_end)
-
+        # detect collision with opponent's stones
         path = a_end | self._shift(a_end, tuple(map((-1).__mul__, offset)) )
         collision = path & a_board[1 - self.current_player]
         print(f'player: {self.current_player}, direction: {State.DIRECTIONS[direction]}, distance:{distance+1}, combo: {p, a}, p: {p_x, p_y}, a:{a_x, a_y}')
@@ -193,8 +192,6 @@ class State:
             a_board[1 - self.current_player] ^= (collision | landing)
         assert new_boards.shape == (2,8,8)
         return new_boards
-
-        
 
     def render(self) -> None:
         'Prints the current game boards.'
@@ -210,33 +207,35 @@ class State:
 
 class Human:
     def policy(self, legal_actions: np.ndarray, current_player: bool) -> tuple[int, int, int, int, int, int]:
-        '''Select a passive and aggressive action from all legal actions.
-        @return z1, y1, x1, z2, y2, x2: passive and aggressive actions defined using coordinates'''
-        raise NotImplementedError
+        '''Select a passive and aggressive action from all legal actions.'''
         def get_choice(choices: list[str], prompt: str = '') -> str:
             'General user input handling function.'
-            choice = ''
-            while choice not in choices:
-                choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
+            if len(choices) < 2:
+                choice = choices[0]
+                print(f'{choice} {prompt} was the only choice.')
+            else:
+                choice = ''
+                while choice not in choices:
+                    choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
             return choice
-        A = np.split(legal_actions, 8, axis=0) # split legal actions by direction
-        q = State.DIRECTIONS.index( get_choice([State.DIRECTIONS[i] for i in range(8) if A[i].any()], 'direction') ) # choose a direction
-        B = A[q] 
-        w = int(get_choice([ str(i-1) for i in [2,3] if B[i].any() ], 'distance') ) + 1 # choose a distance
-        z2 = 4*q + w
-        C = np.argwhere(B[w])
-        a_coord = get_choice([ f'({x} {y})' for y, x in C], 'aggro move (x y) ending square') # choose aggro ending
-        x2 = int(a_coord[1]); y2 = int(a_coord[3])
-        z1 = z2 - 2
-        p_options = legal_actions[z1]
-        p_mask = np.zeros(p_options.shape, p_options.dtype)[None,:]
-        p_board = State.A2P[current_player][x2//4 + 2*(y2//4)] 
-        p_mask[State.QUADRANT[p_board]] = 1
-        p_options &= p_mask[0]
-        D = np.argwhere(p_options)
-        p_coord = get_choice([ f'({x} {y})' for y, x in D], 'passive move (x y) ending square') # choose passive ending
-        x1 = int(p_coord[1]); y1 = int(p_coord[3])
-        return z1, y1, x1, z2, y2, x2
+            
+        legal_actions_coords = np.argwhere(legal_actions)
+
+        combos = legal_actions_coords[:, 0]
+        unique_combos = [str(i) for i in np.unique(combos)]
+        combo = int(choice(unique_combos))#int(get_choice(combos, 'aggro board'))
+        legal_actions_coords = legal_actions_coords[combos == combo]
+
+        directions = legal_actions_coords[:, 1]
+        unique_directions = [State.DIRECTIONS[i] for i in np.unique(directions)]
+        direction = State.DIRECTIONS.index(choice(unique_directions))
+        legal_actions_coords = legal_actions_coords[directions == direction]
+
+        distances = legal_actions_coords[:, 2]
+        unique_distances = [str(i) for i in np.unique(distances)]
+        distance = unique_distances.index(choice(unique_distances))
+
+        return action
 
 class Random:
     def policy(self, legal_actions: np.ndarray, _) -> tuple[int, int, int, int, int, int]:
@@ -301,7 +300,7 @@ class Game:
             self.plies += 1
 
 if __name__ == '__main__':
-    game = Game(Random(), Random(), True)
-    for _ in range(20):
+    game = Game(Human(), Random(), True)
+    for _ in range(2):
         reward = game.play()
     pass
