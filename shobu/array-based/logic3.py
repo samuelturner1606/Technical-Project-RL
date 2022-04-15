@@ -84,11 +84,11 @@ class State:
         assert current_player in (0,1), 'Player parameter incorrect.'
         self.current_player = current_player
         if boards is None: # creates default starting state
-            self.boards: np.ndarray = np.zeros(shape=(2,8,8), dtype=np.uint8)
+            self.boards: np.ndarray = np.zeros(shape=(2,8,8), dtype=np.float32)
             self.boards[1, -1:0:-4, :] = 1 # player 1 pieces
             self.boards[0, 0:-1:4, :] = 1 # player 2 pieces
         else:
-            self.boards: np.ndarray = np.asarray(boards, dtype=np.uint8)
+            self.boards: np.ndarray = np.asarray(boards, dtype=np.float32)
             assert self.boards.shape == (2,8,8), 'Board not the right shape.'
     
     def __eq__ (self, other):
@@ -143,14 +143,14 @@ class State:
     def legal_actions(self) -> np.ndarray:
         '''Find all legal actions on all boards, in all directions and distances. Can be used to directly mask the policy head of the neural network for legal actions.
         @return output: ndarray indexed by (combo, direction, distance, aggro_y, aggro_x, passive_y, passive_x)'''
-        output = np.zeros(shape=(4,8,2,4,4,4,4), dtype=np.uint8)
+        output = np.zeros(shape=(4,8,2,4,4,4,4), dtype=np.float32)
         for d, offset in enumerate(State.OFFSETS):
             for p in State.P2A[self.current_player]:
                 passives1, passives2 = self._legal_passives(self.boards[State.QUADRANT[p]], offset)
                 if np.any(passives1):
                     for a in State.P2A[self.current_player][p]:
                         aggros1, aggros2 = self._legal_aggros(self.boards[State.QUADRANT[a]], offset)
-                        temp_aggros = np.zeros(shape=(4,8,2,4,4), dtype=np.uint8)
+                        temp_aggros = np.zeros(shape=(4,8,2,4,4), dtype=np.float32)
                         if np.any(aggros1):
                             output[a, d, 0, ...] = passives1
                             temp_aggros[a, d, 0, ...] = aggros1
