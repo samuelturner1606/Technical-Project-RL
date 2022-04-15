@@ -69,12 +69,14 @@ def process_state(state: State):
     else:
         return state.boards
 
-def train():
-    """
-    This function trains the neural network with examples obtained from self-play.
-    - pi is the MCTS informed policy vector for the given board
-    """
-    return model.fit(x = input_boards, y = [target_pis, target_vs], batch_size = 64, epochs = 10)
+def train(model: Model, states: list[State], actor_targets, critic_targets):
+    'This function trains the neural network with examples obtained from self-play.'
+    return model.fit(
+        x = {'state': [process_state(s) for s in states]}, # might need to change to ndarray
+        y = {'actor': actor_targets, 'critic': critic_targets},
+        epochs=10,
+        batch_size=64,
+        )
 
 def save_checkpoint(model, path):
     model.save(path)
