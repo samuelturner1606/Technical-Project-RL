@@ -53,10 +53,11 @@ def make_network():
     model.compile(
         optimizer = 'sgd', # optimizers.Adam()
         loss = {
-            'actor': losses.KLDivergence(), # 'categorical_crossentropy'
-            'critic': losses.CategoricalCrossentropy(from_logits=True), # 'mean_squared_error'
-        },
-        loss_weights = {'actor': 1, 'critc': 1}
+            'actor': losses.SparseCategoricalCrossentropy(from_logits=True),
+            'critic': losses.MeanSquaredError()
+            }, 
+        loss_weights = {'actor': 1, 'critc': 1},
+        metrics=["acc"]
     )
     model.summary()
     #utils.plot_model(model, "model_diagram.png", show_shapes=True)
@@ -78,8 +79,27 @@ def train(model: Model, states: list[State], actor_targets, critic_targets):
         batch_size=64,
         )
 
-def save_checkpoint(model, path):
-    model.save(path)
+def save_checkpoint(model: Model):
+    'functions for saving and loading.'
+    model.save('saved_models')
     del model
     # Recreate the exact same model purely from the file:
-    return models.load_model(path)
+    return models.load_model('saved_models')
+
+'''
+# Simple training loop
+loss_fn = tf.keras.losses.CategoricalCrossentropy(from_logits=True)
+optimizer = tf.keras.optimizers.Adam()
+
+# Iterate over the batches of a dataset.
+for x, y in dataset:
+    with tf.GradientTape() as tape:
+        logits = model(x)
+        # Compute the loss value for this batch.
+        loss_value = loss_fn(y, logits)
+
+    # Update the weights of the model to minimize the loss value.
+    gradients = tape.gradient(loss_value, model.trainable_weights)
+    optimizer.apply_gradients(zip(gradients, model.trainable_weights))
+
+'''

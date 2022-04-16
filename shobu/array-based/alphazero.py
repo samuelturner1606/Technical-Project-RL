@@ -1,11 +1,7 @@
-"""Pseudocode description of the AlphaZero algorithm."""
-
-
-from __future__ import google_type_annotations
-from __future__ import division
+"""Gumbel AlphaZero algorithm for Shōbu."""
 
 import math
-import numpy
+import numpy as np
 import tensorflow as tf
 from typing import List
 
@@ -14,23 +10,13 @@ from typing import List
 
 
 class AlphaZeroConfig(object):
-
   def __init__(self):
     ### Self-Play
     self.num_actors = 1 # 5000 ?
-    self.num_sampling_moves = 20 # 30 # moves at start of each game, the temperature is set to τ = 1; this selects moves proportionally to their visit count ensuring exploration.
-    self.max_moves = 150 # max game length
-    self.num_simulations = 100 #800 thinking time
+    self.num_explorative_moves = 20 # 30
+    self.max_plies = 150
+    self.num_simulations = 100 # 800, thinking time used in evaluation?
 
-    '''
-    # Root prior exploration noise.
-    self.root_dirichlet_alpha = 0.3  # for chess, 0.03 for Go and 0.15 for shogi.
-    self.root_exploration_fraction = 0.25
-
-    # UCB formula
-    self.pb_c_base = 19652
-    self.pb_c_init = 1.25
-    '''
     ### Training
     self.training_steps = int(10e3) # int(700e3)
     self.checkpoint_interval = int(1e2) # int(1e3)
@@ -47,23 +33,27 @@ class AlphaZeroConfig(object):
         50e2: 2e-4 # 500e3: 2e-4
     }
 
+    ### extra
+    c_visit = 50
+    c_scale = 1
+
 
 class Node:
   def __init__(self, prior: float):
     self.visit_count = 0
     self.to_play = -1
     self.prior = prior
-    self.value_sum = 0
+    self.q_sum = 0
     self.children = {}
-    #self.reward = 0
+    self.reward = 0
 
   def expanded(self) -> bool:
     return len(self.children) > 0
 
-  def value(self) -> float:
+  def mean_q(self) -> float:
     if self.visit_count == 0:
       return 0
-    return self.value_sum / self.visit_count
+    return self.q_sum / self.visit_count
 
 
 class Game:
@@ -123,11 +113,11 @@ class ReplayBuffer:
   def sample_batch(self):
     # Sample uniformly across positions.
     move_sum = float(sum(len(g.history) for g in self.buffer))
-    games = numpy.random.choice(
+    games = np.random.choice(
         self.buffer,
         size=self.batch_size,
         p=[len(g.history) / move_sum for g in self.buffer])
-    game_pos = [(g, numpy.random.randint(len(g.history))) for g in games]
+    game_pos = [(g, np.random.randint(len(g.history))) for g in games]
     return [(g.make_image(i), g.make_target(i)) for (g, i) in game_pos]
 
 
@@ -195,7 +185,7 @@ def run_selfplay(config: AlphaZeroConfig, storage: SharedStorage,
 # of the game is reached.
 def play_game(config: AlphaZeroConfig, network: Network):
   game = Game()
-  while not game.terminal() and len(game.history) < config.max_moves:
+  while not game.terminal() and len(game.history) < config.max_plies:
     action, root = run_mcts(config, game, network)
     game.apply(action)
     game.store_search_statistics(root)
@@ -209,7 +199,9 @@ def play_game(config: AlphaZeroConfig, network: Network):
 def run_mcts(config: AlphaZeroConfig, game: Game, network: Network):
   root = Node(0)
   evaluate(root, game, network)
+  '''
   add_exploration_noise(config, root)
+  '''
 
   for _ in range(config.num_simulations):
     node = root
@@ -229,7 +221,7 @@ def run_mcts(config: AlphaZeroConfig, game: Game, network: Network):
 def select_action(config: AlphaZeroConfig, game: Game, root: Node):
   visit_counts = [(child.visit_count, action)
                   for action, child in root.children.iteritems()]
-  if len(game.history) < config.num_sampling_moves:
+  if len(game.history) < config.num_explorative_moves:
     _, action = softmax_sample(visit_counts)
   else:
     _, action = max(visit_counts)
@@ -251,7 +243,7 @@ def ucb_score(config: AlphaZeroConfig, parent: Node, child: Node):
   pb_c *= math.sqrt(parent.visit_count) / (child.visit_count + 1)
 
   prior_score = pb_c * child.prior
-  value_score = child.value()
+  value_score = child.mean_q()
   return prior_score + value_score
 
 
@@ -272,19 +264,19 @@ def evaluate(node: Node, game: Game, network: Network):
 # tree to the root.
 def backpropagate(search_path: List[Node], value: float, to_play):
   for node in search_path:
-    node.value_sum += value if node.to_play == to_play else (1 - value)
+    node.q_sum += value if node.to_play == to_play else (1 - value)
     node.visit_count += 1
 
-
+'''
 # At the start of each search, we add dirichlet noise to the prior of the root
 # to encourage the search to explore new actions.
 def add_exploration_noise(config: AlphaZeroConfig, node: Node):
   actions = node.children.keys()
-  noise = numpy.random.gamma(config.root_dirichlet_alpha, 1, len(actions))
+  noise = np.random.gamma(config.root_dirichlet_alpha, 1, len(actions))
   frac = config.root_exploration_fraction
   for a, n in zip(actions, noise):
     node.children[a].prior = node.children[a].prior * (1 - frac) + n * frac
-
+'''
 
 ######### End Self-Play ##########
 ##################################
