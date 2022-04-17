@@ -7,34 +7,42 @@ class Network:
     'Class containing all methods and variables that interact with the neural network.'
     # Configs
     num_actions = 4*8*2*4*4*4*4
-    batch_size = 32
+    batch_size = 50
+    batch_save_freq = 20*batch_size
     momentum = 0.9
     workers = 1
-    lr_schedule = optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=2e-1,
-        decay_steps=1e3,
-        decay_rate=0.99,
-        staircase=True)
-    epochs = 5 # need to check behaviour of this
-    #training_steps = int(10e3) # int(700e3)
-    #checkpoint_interval = int(1e2) # int(1e3)
-    checkpoint_filepath = 'weights.{epoch:02d}-{accuracy:.2f}.hdf5'
-    model_checkpoint_callback = callbacks.ModelCheckpoint(
-        filepath=checkpoint_filepath,
-        monitor='accuracy',
-        verbose=1, # 0 for silent callback display
-        save_best_only=True,
-        save_weights_only=True,
-        mode='auto',
-        save_freq='epoch')
     num_explorative_moves = 20
     max_plies = 150
     num_simulations = 100
     c_visit = 50
     c_scale = 1
+    lr_schedule = optimizers.schedules.ExponentialDecay(
+        initial_learning_rate=2e-1,
+        decay_steps=batch_save_freq//2,
+        decay_rate=0.99,
+        staircase=False)
+    training_steps = int(10e3)
+    model_callbacks = [
+        callbacks.EarlyStopping(
+            monitor='accuracy',
+            verbose=1,
+            patience=batch_save_freq//2),
+        callbacks.ModelCheckpoint(
+            filepath='./weights.{epoch:02d}-{accuracy:.2f}.hdf5',
+            monitor='accuracy',
+            verbose=1, # 0 for silent callback display
+            save_best_only=True,
+            save_weights_only=True,
+            save_freq=batch_save_freq), # saves model after N batches (if best)
+        callbacks.TensorBoard(
+            log_dir='./logs', 
+            write_graph=True,
+            update_freq='batch')
+    ]
 
     def __init__(self) -> None:
-        states = Input(shape=(2,8,8), dtype='float32', name='states')
+        'Creates combined actor-critic network.'
+        states = Input(shape=(2,8,8,), dtype='float32', name='states')
         x = self.basic_block(input, kernel_size=3)
         x = self.bottleneck_block(x)
         x = self.bottleneck_block(x)
@@ -100,9 +108,8 @@ class Network:
         history = self.model.fit(
             x = states,
             y = {'actor': actor_targets, 'critic': critic_targets},
-            epochs=Network.epochs,
             batch_size=Network.batch_size,
-            callbacks=[Network.model_checkpoint_callback],
+            callbacks=[Network.model_callbacks],
             workers=Network.workers
             )
     
@@ -116,26 +123,5 @@ class Network:
         policy, value = self.model(input, training=False)
         return policy[0], value[0]
 
-    def load_checkpoint(self):
-        'The model weights (that are considered the best) are loaded into the model.'
-        self.model.load_weights(Network.checkpoint_filepath)
-
-
-
-
-
-##################################
-####### Part 2: Training #########
-
-
-def train_network(config: AlphaZeroConfig, storage: SharedStorage,replay_buffer: ReplayBuffer):
-  network = Network()
-  optimizer = tf.train.MomentumOptimizer(config.learning_rate_schedule, config.momentum)
-  for i in range(config.training_steps):
-    if i % config.checkpoint_interval == 0:
-      storage.save_network(i, network)
-    batch = replay_buffer.sample_batch()
-    update_weights(optimizer, network, batch, config.weight_decay)
-  storage.save_network(config.training_steps, network)
 
 
