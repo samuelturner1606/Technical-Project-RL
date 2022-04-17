@@ -8,43 +8,45 @@ from tensorflow.keras import layers, Model, Input, initializers, optimizers, uti
 ##########################
 ####### Helpers ##########
 
+class Network:
+  ### Self-Play
+  workers = 1
 
-class AlphaZeroConfig(object):
+  num_explorative_moves = 30
+  max_plies = 150
+  num_simulations = 400
 
-  def __init__(self):
-    ### Self-Play
-    self.workers = 1
+  # Root prior exploration noise.
+  root_dirichlet_alpha = 0.3  # for chess, 0.03 for Go and 0.15 for shogi.
+  root_exploration_fraction = 0.25
 
-    self.num_explorative_moves = 30
-    self.max_plies = 150
-    self.num_simulations = 400
+  # UCB formula
+  pb_c_base = 19652
+  pb_c_init = 1.25
 
-    # Root prior exploration noise.
-    self.root_dirichlet_alpha = 0.3  # for chess, 0.03 for Go and 0.15 for shogi.
-    self.root_exploration_fraction = 0.25
+  ### Training
+  training_steps = int(10e3)
+  checkpoint_interval = int(1e3)
+  window_size = int(1e6)
+  batch_size = 50
+  batch_save_freq = 20*batch_size
+  weight_decay = 1e-4
+  momentum = 0.9
 
-    # UCB formula
-    self.pb_c_base = 19652
-    self.pb_c_init = 1.25
+  learning_rate_schedule = optimizers.schedules.ExponentialDecay(
+      initial_learning_rate=2e-1,
+      decay_steps=batch_save_freq//2,
+      decay_rate=0.99,
+      staircase=False)
 
-    ### Training
-    self.training_steps = int(10e3)
-    self.checkpoint_interval = int(1e3)
-    self.window_size = int(1e6)
-    self.batch_size = 50
-    self.batch_save_freq = 20*self.batch_size
-    self.weight_decay = 1e-4
-    self.momentum = 0.9
+  def inference(self, image):
+    return (-1, {})  # Value, Policy
 
-    self.learning_rate_schedule = optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=2e-1,
-        decay_steps=self.batch_save_freq//2,
-        decay_rate=0.99,
-        staircase=False)
+  def get_weights(self):
+    # Returns the weights of this network.
+    return []
 
-
-class Node(object):
-
+class Node:
   def __init__(self, prior: float):
     self.visit_count = 0
     self.to_play = -1
@@ -61,7 +63,7 @@ class Node(object):
     return self.value_sum / self.visit_count
 
 
-class Game(object):
+class Game:
 
   def __init__(self, history=None):
     self.history = history or []
@@ -105,11 +107,10 @@ class Game(object):
     return len(self.history) % 2
 
 
-class ReplayBuffer(object):
-
-  def __init__(self, config: AlphaZeroConfig):
-    self.window_size = config.window_size
-    self.batch_size = config.batch_size
+class ReplayBuffer:
+  def __init__(self):
+    self.window_size = Network.window_size
+    self.batch_size = Network.batch_size
     self.buffer = []
 
   def save_game(self, game):
@@ -128,17 +129,7 @@ class ReplayBuffer(object):
     return [(g.make_image(i), g.make_target(i)) for (g, i) in game_pos]
 
 
-class Network(object):
-
-  def inference(self, image):
-    return (-1, {})  # Value, Policy
-
-  def get_weights(self):
-    # Returns the weights of this network.
-    return []
-
-
-class SharedStorage(object):
+class SharedStorage:
 
   def __init__(self):
     self._networks = {}
@@ -147,7 +138,7 @@ class SharedStorage(object):
     if self._networks:
       return self._networks[max(self._networks.iterkeys())]
     else:
-      return make_uniform_network()  # policy -> uniform, value -> 0.5
+      return Network()  # policy -> uniform, value -> 0.5
 
   def save_network(self, step: int, network: Network):
     self._networks[step] = network
@@ -162,14 +153,14 @@ class SharedStorage(object):
 # These two parts only communicate by transferring the latest network checkpoint
 # from the training to the self-play, and the finished games from the self-play
 # to the training.
-def alphazero(config: AlphaZeroConfig):
+def alphazero():
   storage = SharedStorage()
-  replay_buffer = ReplayBuffer(config)
+  replay_buffer = ReplayBuffer()
 
-  for i in range(config.workers):
-    launch_job(run_selfplay, config, storage, replay_buffer)
+  for i in range(Network.workers):
+    run_selfplay(storage, replay_buffer)
 
-  train_network(config, storage, replay_buffer)
+  train_network(storage, replay_buffer)
 
   return storage.latest_network()
 
@@ -181,21 +172,20 @@ def alphazero(config: AlphaZeroConfig):
 # Each self-play job is independent of all others; it takes the latest network
 # snapshot, produces a game and makes it available to the training job by
 # writing it to a shared replay buffer.
-def run_selfplay(config: AlphaZeroConfig, storage: SharedStorage,
-                 replay_buffer: ReplayBuffer):
+def run_selfplay(storage: SharedStorage, replay_buffer: ReplayBuffer):
   while True:
     network = storage.latest_network()
-    game = play_game(config, network)
+    game = play_game(network)
     replay_buffer.save_game(game)
 
 
 # Each game is produced by starting at the initial board position, then
 # repeatedly executing a Monte Carlo Tree Search to generate moves until the end
 # of the game is reached.
-def play_game(config: AlphaZeroConfig, network: Network):
+def play_game(network: Network):
   game = Game()
-  while not game.terminal() and len(game.history) < config.max_plies:
-    action, root = run_mcts(config, game, network)
+  while not game.terminal() and len(game.history) < Network.max_plies:
+    action, root = run_mcts(game, network)
     game.apply(action)
     game.store_search_statistics(root)
   return game
@@ -205,30 +195,29 @@ def play_game(config: AlphaZeroConfig, network: Network):
 # To decide on an action, we run N simulations, always starting at the root of
 # the search tree and traversing the tree according to the UCB formula until we
 # reach a leaf node.
-def run_mcts(config: AlphaZeroConfig, game: Game, network: Network):
+def run_mcts(game: Game, network: Network):
   root = Node(0)
   evaluate(root, game, network)
-  add_exploration_noise(config, root)
+  add_exploration_noise(root)
 
-  for _ in range(config.num_simulations):
+  for _ in range(Network.num_simulations):
     node = root
     scratch_game = game.clone()
     search_path = [node]
 
     while node.expanded():
-      action, node = select_child(config, node)
+      action, node = select_child(node)
       scratch_game.apply(action)
       search_path.append(node)
 
     value = evaluate(node, scratch_game, network)
     backpropagate(search_path, value, scratch_game.to_play())
-  return select_action(config, game, root), root
+  return select_action(game, root), root
 
 
-def select_action(config: AlphaZeroConfig, game: Game, root: Node):
-  visit_counts = [(child.visit_count, action)
-                  for action, child in root.children.iteritems()]
-  if len(game.history) < config.num_explorative_moves:
+def select_action(game: Game, root: Node):
+  visit_counts = [(child.visit_count, action) for action, child in root.children.iteritems()]
+  if len(game.history) < Network.num_explorative_moves:
     _, action = softmax_sample(visit_counts)
   else:
     _, action = max(visit_counts)
@@ -236,17 +225,15 @@ def select_action(config: AlphaZeroConfig, game: Game, root: Node):
 
 
 # Select the child with the highest UCB score.
-def select_child(config: AlphaZeroConfig, node: Node):
-  _, action, child = max((ucb_score(config, node, child), action, child)
-                         for action, child in node.children.iteritems())
+def select_child(node: Node):
+  _, action, child = max((ucb_score(node, child), action, child) for action, child in node.children.iteritems())
   return action, child
 
 
 # The score for a node is based on its value, plus an exploration bonus based on
 # the prior.
-def ucb_score(config: AlphaZeroConfig, parent: Node, child: Node):
-  pb_c = math.log((parent.visit_count + config.pb_c_base + 1) /
-                  config.pb_c_base) + config.pb_c_init
+def ucb_score(parent: Node, child: Node):
+  pb_c = math.log((parent.visit_count + Network.pb_c_base + 1) / Network.pb_c_base) + Network.pb_c_init
   pb_c *= math.sqrt(parent.visit_count) / (child.visit_count + 1)
 
   prior_score = pb_c * child.prior
@@ -277,10 +264,10 @@ def backpropagate(search_path: list[Node], value: float, to_play):
 
 # At the start of each search, we add dirichlet noise to the prior of the root
 # to encourage the search to explore new actions.
-def add_exploration_noise(config: AlphaZeroConfig, node: Node):
+def add_exploration_noise(node: Node):
   actions = node.children.keys()
-  noise = numpy.random.gamma(config.root_dirichlet_alpha, 1, len(actions))
-  frac = config.root_exploration_fraction
+  noise = numpy.random.gamma(Network.root_dirichlet_alpha, 1, len(actions))
+  frac = Network.root_exploration_fraction
   for a, n in zip(actions, noise):
     node.children[a].prior = node.children[a].prior * (1 - frac) + n * frac
 
@@ -292,28 +279,22 @@ def add_exploration_noise(config: AlphaZeroConfig, node: Node):
 ####### Part 2: Training #########
 
 
-def train_network(config: AlphaZeroConfig, storage: SharedStorage,
-                  replay_buffer: ReplayBuffer):
+def train_network(storage: SharedStorage, replay_buffer: ReplayBuffer):
   network = Network()
-  optimizer = tf.train.MomentumOptimizer(config.learning_rate_schedule,
-                                         config.momentum)
-  for i in range(config.training_steps):
-    if i % config.checkpoint_interval == 0:
+  optimizer = tf.train.MomentumOptimizer(Network.learning_rate_schedule, Network.momentum)
+  for i in range(Network.training_steps):
+    if i % Network.checkpoint_interval == 0:
       storage.save_network(i, network)
     batch = replay_buffer.sample_batch()
-    update_weights(optimizer, network, batch, config.weight_decay)
-  storage.save_network(config.training_steps, network)
+    update_weights(optimizer, network, batch, Network.weight_decay)
+  storage.save_network(Network.training_steps, network)
 
 
-def update_weights(optimizer: tf.train.Optimizer, network: Network, batch,
-                   weight_decay: float):
+def update_weights(optimizer: tf.train.Optimizer, network: Network, batch, weight_decay: float):
   loss = 0
   for image, (target_value, target_policy) in batch:
     value, policy_logits = network.inference(image)
-    loss += (
-        tf.losses.mean_squared_error(value, target_value) +
-        tf.nn.softmax_cross_entropy_with_logits(
-            logits=policy_logits, labels=target_policy))
+    loss += (tf.losses.mean_squared_error(value, target_value) + tf.nn.softmax_cross_entropy_with_logits(logits=policy_logits, labels=target_policy))
 
   for weights in network.get_weights():
     loss += weight_decay * tf.nn.l2_loss(weights)
@@ -327,17 +308,3 @@ def update_weights(optimizer: tf.train.Optimizer, network: Network, batch,
 ################################################################################
 ############################# End of pseudocode ################################
 ################################################################################
-
-
-# Stubs to make the typechecker happy, should not be included in pseudocode
-# for the paper.
-def softmax_sample(d):
-  return 0, 0
-
-
-def launch_job(f, *args):
-  f(*args)
-
-
-def make_uniform_network():
-  return Network()
