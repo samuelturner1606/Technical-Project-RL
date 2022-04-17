@@ -6,6 +6,7 @@ from logic3 import Game, State, Random
 class Network:
     'Class containing all methods and variables that interact with the neural network.'
     # Configs
+    action_space_shape = (4,8,2,4,4,4,4)
     num_actions = 4*8*2*4*4*4*4
     batch_size = 50
     batch_save_freq = 20*batch_size
@@ -42,7 +43,7 @@ class Network:
 
     def __init__(self) -> None:
         'Creates combined actor-critic network.'
-        states = Input(shape=(2,8,8,), dtype='float32', name='states')
+        states = Input(shape=(2,8,8), dtype='float32', name='states')
         x = self.basic_block(input, kernel_size=3)
         x = self.bottleneck_block(x)
         x = self.bottleneck_block(x)
@@ -50,10 +51,10 @@ class Network:
         #x = self.bottleneck_block(x)
         #x = self.bottleneck_block(x)
         #x = self.bottleneck_block(x)
+        critic = layers.Dense(1, activation='tanh', name='critic')(x)
         x = layers.Flatten(data_format='channels_first')(x)
-        actor = layers.Dense(Network.num_actions, activation='softmax', name='actor')(x)
-        critic = layers.Dense(1, activation='tanh', name='critic')(x)  
-        self.model = Model(inputs=states, outputs=[actor, critic])
+        actor = layers.Dense(Network.num_actions, activation=None, name='actor')(x)
+        self.model = Model(inputs=[states], outputs=[actor, critic])
         self.model.compile(
             optimizer = optimizers.SGD(learning_rate=Network.lr_schedule, momentum=Network.momentum),
             loss = {
@@ -101,12 +102,12 @@ class Network:
         x = layers.ReLU()(x)
         return x
 
-    def train(self, states: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):
+    def train(self, states: list[np.ndarray], legal_actions: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):
         '''trains the neural network with examples obtained from self-play.
         Model weights are saved at the end of every epoch, if it's the best seen so far.
         '''
         history = self.model.fit(
-            x = states,
+            x = {'states':states} ,
             y = {'actor': actor_targets, 'critic': critic_targets},
             batch_size=Network.batch_size,
             callbacks=[Network.model_callbacks],
@@ -114,14 +115,14 @@ class Network:
             )
     
     def inference(self, state: State):
-        'Makes 2x8x8 ndarray as input to neural network with the index (0,...) always corresponding to current player.'
-        # preparing input
         if state.current_player == 1:
             input = np.array([state.boards[1],state.boards[0]], state.boards.dtype)
         else:
             input = state.boards
         policy, value = self.model(input, training=False)
-        return policy[0], value[0]
+        raise NotImplementedError
+        masked_policy = policy[0]
+        return masked_policy, value[0]
 
 
 

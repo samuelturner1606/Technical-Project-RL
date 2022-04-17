@@ -69,8 +69,8 @@ class State:
     @param current_player: 1 for player1, 0 for player2.'''
     # The following are constants shared between all State instances used to speed up calculations
     P2A = ( # mapping of passive to aggro board (indices) combinations
-        { 0: (1, 2), 1: (0, 3)}, # player 2
-        { 2: (0, 3), 3: (1, 2)} )# player 1
+        { 2: (0, 3), 3: (1, 2)}, # index 0 = player 1
+        { 0: (1, 2), 1: (0, 3)} ) # index 1 = player 2
     A2P = tuple( {aggro:passive for passive in player for aggro in player[passive]} for player in P2A ) # reverse mapping of `P2A`
     DIRECTIONS = ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW')
     OFFSETS = ((-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1)) # indices match `DIRECTIONS`
@@ -80,9 +80,7 @@ class State:
         (..., slice(4,8), slice(0,4)),
         (..., slice(4,8), slice(4,8)) )
 
-    def __init__(self, boards: np.ndarray = None, current_player: int = 1) -> None:
-        assert current_player in (0,1), 'Player parameter incorrect.'
-        self.current_player = current_player
+    def __init__(self, boards: np.ndarray = None) -> None:
         if boards is None: # creates default starting state
             self.boards: np.ndarray = np.zeros(shape=(2,8,8), dtype=np.float32)
             self.boards[1, -1:0:-4, :] = 1 # player 1 pieces
@@ -158,8 +156,6 @@ class State:
                             output[a, d, 1, ...] = passives2
                             temp_aggros[a, d, 1, ...] = aggros2
                         output[a, d, ...] &= temp_aggros[a, d, ..., None, None] # temp_aggros is broadcasted to the shape of output
-        n = np.argwhere(output)
-        print(f'Number of actions: {len(n)}')
         assert output.shape == (4,8,2,4,4,4,4), 'Shape of legal actions is wrong'
         return output
     
@@ -253,36 +249,21 @@ class Random:
         '''Randomly select an action from all legal actions.'''
         return choice(np.argwhere(legal_actions)) 
 
-class Node:
-  def __init__(self, prior: float):
-    self.visit_count = 0
-    self.to_play = -1
-    self.prior = prior
-    self.q_sum = 0
-    self.children = {}
-    self.reward = 0
-
-  def expanded(self) -> bool:
-    return len(self.children) > 0
-
-  def mean_q(self) -> float:
-    if self.visit_count == 0:
-      return 0
-    return self.q_sum / self.visit_count
-
-class Game1:
+class Game:
     def __init__(self, player1: object, player2: object, render: bool = False) -> None:
         self.players = [player2, player1] # index 1 for player 1, matching State.current_player
         self.render = render
-        self._reset()
+        self.reset()
 
-    def _reset(self) -> None:
+    def reset(self) -> None:
         self.state = State() # default start state
         self.plies = 0 # used for max game length rule
         self.done = False
+        self.state_history = []
+        self.action_history = []
         return
 
-    def _is_terminal(self, legal_actions: np.ndarray):
+    def terminal(self, legal_actions: np.ndarray):
         '''Losing conditions:
         1) A player has no stones on one of the boards
         2) A player has no legal moves
@@ -313,13 +294,15 @@ class Game1:
     def play(self) -> int:
         'Plays a Shōbu game, then resets itself and returns the reward.'
         while True:
+            legal_actions = self.state.legal_actions()
             if self.render:
                 self.state.render()
-            legal_actions = self.state.legal_actions()
-            reward = self._is_terminal(legal_actions)
+                n = np.argwhere(legal_actions)
+                print(f'Number of actions: {len(n)}')
+            reward = self.terminal(legal_actions)
             if self.done:
                 print(f'plies: {self.plies}, reward: {reward}')
-                self._reset()
+                self.reset()
                 return reward
             c = self.state.current_player
             action = self.players[c].policy(legal_actions, c)
@@ -327,44 +310,3 @@ class Game1:
             self.state = State(new_boards, current_player=1-c)
             self.plies += 1
 
-class Game:
-  def __init__(self, history=None):
-    self.history = history or []
-    self.child_visits = []
-    self.num_actions = 4672  # action space size for chess; 11259 for shogi, 362 for Go
-
-  def terminal(self):
-    # Game specific termination rules.
-    pass
-
-  def terminal_value(self, to_play):
-    # Game specific value.
-    pass
-
-  def legal_actions(self):
-    # Game specific calculation of legal actions.
-    return []
-
-  def clone(self):
-    return Game2(list(self.history))
-
-  def apply(self, action):
-    self.history.append(action)
-
-  def store_search_statistics(self, root):
-    sum_visits = sum(child.visit_count for child in root.children.itervalues())
-    self.child_visits.append([
-        root.children[a].visit_count / sum_visits if a in root.children else 0
-        for a in range(self.num_actions)
-    ])
-
-  def make_image(self, state_index: int):
-    # Game specific feature planes.
-    return []
-
-  def make_target(self, state_index: int):
-    return (self.terminal_value(state_index % 2),
-            self.child_visits[state_index])
-
-  def to_play(self):
-    return len(self.history) % 2
