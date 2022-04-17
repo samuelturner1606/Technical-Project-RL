@@ -9,35 +9,6 @@ from typing import List
 ####### Helpers ##########
 
 
-class AlphaZeroConfig(object):
-  def __init__(self):
-    ### Self-Play
-    self.num_actors = 1 # 5000 ?
-    self.num_explorative_moves = 20 # 30
-    self.max_plies = 150
-    self.num_simulations = 100 # 800, thinking time used in evaluation?
-
-    ### Training
-    self.training_steps = int(10e3) # int(700e3)
-    self.checkpoint_interval = int(1e2) # int(1e3)
-    self.window_size = int(1e4) # int(1e6)
-    self.batch_size = 200 # 4096
-
-    self.weight_decay = 1e-4
-    self.momentum = 0.9
-    
-    self.learning_rate_schedule = {
-        0: 2e-1, # 0: 2e-1
-        10e2: 2e-2, # 100e3: 2e-2
-        30e2: 2e-3, # 300e3: 2e-3
-        50e2: 2e-4 # 500e3: 2e-4
-    }
-
-    ### extra
-    c_visit = 50
-    c_scale = 1
-
-
 class Node:
   def __init__(self, prior: float):
     self.visit_count = 0
@@ -121,29 +92,6 @@ class ReplayBuffer:
     return [(g.make_image(i), g.make_target(i)) for (g, i) in game_pos]
 
 
-class Network:
-  def inference(self, image):
-    return (-1, {})  # Value, Policy
-
-  def get_weights(self):
-    # Returns the weights of this network.
-    return []
-
-
-class SharedStorage:
-  def __init__(self):
-    self._networks = {}
-
-  def latest_network(self) -> Network:
-    if self._networks:
-      return self._networks[max(self._networks.iterkeys())]
-    else:
-      return make_uniform_network()  # policy -> uniform, value -> 0.5
-
-  def save_network(self, step: int, network: Network):
-    self._networks[step] = network
-
-
 ##### End Helpers ########
 ##########################
 
@@ -172,8 +120,7 @@ def alphazero(config: AlphaZeroConfig):
 # Each self-play job is independent of all others; it takes the latest network
 # snapshot, produces a game and makes it available to the training job by
 # writing it to a shared replay buffer.
-def run_selfplay(config: AlphaZeroConfig, storage: SharedStorage,
-                 replay_buffer: ReplayBuffer):
+def run_selfplay(config: AlphaZeroConfig, storage: SharedStorage, replay_buffer: ReplayBuffer):
   while True:
     network = storage.latest_network()
     game = play_game(config, network)
@@ -267,55 +214,9 @@ def backpropagate(search_path: List[Node], value: float, to_play):
     node.q_sum += value if node.to_play == to_play else (1 - value)
     node.visit_count += 1
 
-'''
-# At the start of each search, we add dirichlet noise to the prior of the root
-# to encourage the search to explore new actions.
-def add_exploration_noise(config: AlphaZeroConfig, node: Node):
-  actions = node.children.keys()
-  noise = np.random.gamma(config.root_dirichlet_alpha, 1, len(actions))
-  frac = config.root_exploration_fraction
-  for a, n in zip(actions, noise):
-    node.children[a].prior = node.children[a].prior * (1 - frac) + n * frac
-'''
-
 ######### End Self-Play ##########
 ##################################
 
-##################################
-####### Part 2: Training #########
-
-
-def train_network(config: AlphaZeroConfig, storage: SharedStorage,
-                  replay_buffer: ReplayBuffer):
-  network = Network()
-  optimizer = tf.train.MomentumOptimizer(config.learning_rate_schedule,
-                                         config.momentum)
-  for i in range(config.training_steps):
-    if i % config.checkpoint_interval == 0:
-      storage.save_network(i, network)
-    batch = replay_buffer.sample_batch()
-    update_weights(optimizer, network, batch, config.weight_decay)
-  storage.save_network(config.training_steps, network)
-
-
-def update_weights(optimizer: tf.train.Optimizer, network: Network, batch,
-                   weight_decay: float):
-  loss = 0
-  for image, (target_value, target_policy) in batch:
-    value, policy_logits = network.inference(image)
-    loss += (
-        tf.losses.mean_squared_error(value, target_value) +
-        tf.nn.softmax_cross_entropy_with_logits(
-            logits=policy_logits, labels=target_policy))
-
-  for weights in network.get_weights():
-    loss += weight_decay * tf.nn.l2_loss(weights)
-
-  optimizer.minimize(loss)
-
-
-######### End Training ###########
-##################################
 
 ################################################################################
 ############################# End of pseudocode ################################
