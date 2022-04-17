@@ -1,13 +1,9 @@
 """Pseudocode description of the AlphaZero algorithm."""
 
-
-from __future__ import google_type_annotations
-from __future__ import division
-
 import math
 import numpy
 import tensorflow as tf
-from typing import List
+from tensorflow.keras import layers, Model, Input, initializers, optimizers, utils, losses, models, callbacks, metrics
 
 ##########################
 ####### Helpers ##########
@@ -17,11 +13,11 @@ class AlphaZeroConfig(object):
 
   def __init__(self):
     ### Self-Play
-    self.num_actors = 5000
+    self.workers = 1
 
-    self.num_sampling_moves = 30
-    self.max_moves = 512  # for chess and shogi, 722 for Go.
-    self.num_simulations = 800
+    self.num_explorative_moves = 30
+    self.max_plies = 150
+    self.num_simulations = 400
 
     # Root prior exploration noise.
     self.root_dirichlet_alpha = 0.3  # for chess, 0.03 for Go and 0.15 for shogi.
@@ -32,20 +28,19 @@ class AlphaZeroConfig(object):
     self.pb_c_init = 1.25
 
     ### Training
-    self.training_steps = int(700e3)
+    self.training_steps = int(10e3)
     self.checkpoint_interval = int(1e3)
     self.window_size = int(1e6)
-    self.batch_size = 4096
-
+    self.batch_size = 50
+    self.batch_save_freq = 20*self.batch_size
     self.weight_decay = 1e-4
     self.momentum = 0.9
-    # Schedule for chess and shogi, Go starts at 2e-2 immediately.
-    self.learning_rate_schedule = {
-        0: 2e-1,
-        100e3: 2e-2,
-        300e3: 2e-3,
-        500e3: 2e-4
-    }
+
+    self.learning_rate_schedule = optimizers.schedules.ExponentialDecay(
+        initial_learning_rate=2e-1,
+        decay_steps=self.batch_save_freq//2,
+        decay_rate=0.99,
+        staircase=False)
 
 
 class Node(object):
@@ -171,7 +166,7 @@ def alphazero(config: AlphaZeroConfig):
   storage = SharedStorage()
   replay_buffer = ReplayBuffer(config)
 
-  for i in range(config.num_actors):
+  for i in range(config.workers):
     launch_job(run_selfplay, config, storage, replay_buffer)
 
   train_network(config, storage, replay_buffer)
@@ -199,7 +194,7 @@ def run_selfplay(config: AlphaZeroConfig, storage: SharedStorage,
 # of the game is reached.
 def play_game(config: AlphaZeroConfig, network: Network):
   game = Game()
-  while not game.terminal() and len(game.history) < config.max_moves:
+  while not game.terminal() and len(game.history) < config.max_plies:
     action, root = run_mcts(config, game, network)
     game.apply(action)
     game.store_search_statistics(root)
@@ -233,7 +228,7 @@ def run_mcts(config: AlphaZeroConfig, game: Game, network: Network):
 def select_action(config: AlphaZeroConfig, game: Game, root: Node):
   visit_counts = [(child.visit_count, action)
                   for action, child in root.children.iteritems()]
-  if len(game.history) < config.num_sampling_moves:
+  if len(game.history) < config.num_explorative_moves:
     _, action = softmax_sample(visit_counts)
   else:
     _, action = max(visit_counts)
@@ -274,7 +269,7 @@ def evaluate(node: Node, game: Game, network: Network):
 
 # At the end of a simulation, we propagate the evaluation all the way up the
 # tree to the root.
-def backpropagate(search_path: List[Node], value: float, to_play):
+def backpropagate(search_path: list[Node], value: float, to_play):
   for node in search_path:
     node.value_sum += value if node.to_play == to_play else (1 - value)
     node.visit_count += 1

@@ -8,21 +8,6 @@ class Network:
     # Configs
     action_space_shape = (4,8,2,4,4,4,4)
     num_actions = 4*8*2*4*4*4*4
-    batch_size = 50
-    batch_save_freq = 20*batch_size
-    momentum = 0.9
-    workers = 1
-    num_explorative_moves = 20
-    max_plies = 150
-    num_simulations = 100
-    c_visit = 50
-    c_scale = 1
-    lr_schedule = optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=2e-1,
-        decay_steps=batch_save_freq//2,
-        decay_rate=0.99,
-        staircase=False)
-    training_steps = int(10e3)
     model_callbacks = [
         callbacks.EarlyStopping(
             monitor='accuracy',
