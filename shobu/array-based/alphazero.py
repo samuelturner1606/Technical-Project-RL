@@ -10,8 +10,6 @@ from tensorflow.keras import layers, Model, Input, initializers, optimizers, uti
 
 class Network:
   ### Self-Play
-  workers = 1
-
   num_explorative_moves = 30
   max_plies = 150
   num_simulations = 400
@@ -27,7 +25,6 @@ class Network:
   ### Training
   training_steps = int(10e3)
   checkpoint_interval = int(1e3)
-  window_size = int(1e6)
   batch_size = 50
   batch_save_freq = 20*batch_size
   weight_decay = 1e-4
@@ -106,83 +103,23 @@ class Game:
   def to_play(self):
     return len(self.history) % 2
 
-
-class ReplayBuffer:
-  def __init__(self):
-    self.window_size = Network.window_size
-    self.batch_size = Network.batch_size
-    self.buffer = []
-
-  def save_game(self, game):
-    if len(self.buffer) > self.window_size:
-      self.buffer.pop(0)
-    self.buffer.append(game)
-
-  def sample_batch(self):
-    # Sample uniformly across positions.
-    move_sum = float(sum(len(g.history) for g in self.buffer))
-    games = numpy.random.choice(
-        self.buffer,
-        size=self.batch_size,
-        p=[len(g.history) / move_sum for g in self.buffer])
-    game_pos = [(g, numpy.random.randint(len(g.history))) for g in games]
-    return [(g.make_image(i), g.make_target(i)) for (g, i) in game_pos]
-
-
-class SharedStorage:
-
-  def __init__(self):
-    self._networks = {}
-
-  def latest_network(self) -> Network:
-    if self._networks:
-      return self._networks[max(self._networks.iterkeys())]
-    else:
-      return Network()  # policy -> uniform, value -> 0.5
-
-  def save_network(self, step: int, network: Network):
-    self._networks[step] = network
-
-
 ##### End Helpers ########
 ##########################
 
-
-# AlphaZero training is split into two independent parts: Network training and
-# self-play data generation.
-# These two parts only communicate by transferring the latest network checkpoint
-# from the training to the self-play, and the finished games from the self-play
-# to the training.
+# AlphaZero cycles between: self-play data generation and network training. 
+# network checkpoints are handled by keras callback functions
 def alphazero():
-  storage = SharedStorage()
-  replay_buffer = ReplayBuffer()
-
-  for i in range(Network.workers):
-    run_selfplay(storage, replay_buffer)
-
-  train_network(storage, replay_buffer)
-
-  return storage.latest_network()
-
+  game = self_play()
+  train_network()
+  return
 
 ##################################
 ####### Part 1: Self-Play ########
-
-
-# Each self-play job is independent of all others; it takes the latest network
-# snapshot, produces a game and makes it available to the training job by
-# writing it to a shared replay buffer.
-def run_selfplay(storage: SharedStorage, replay_buffer: ReplayBuffer):
-  while True:
-    network = storage.latest_network()
-    game = play_game(network)
-    replay_buffer.save_game(game)
-
-
+  
 # Each game is produced by starting at the initial board position, then
 # repeatedly executing a Monte Carlo Tree Search to generate moves until the end
 # of the game is reached.
-def play_game(network: Network):
+def self_play(network: Network):
   game = Game()
   while not game.terminal() and len(game.history) < Network.max_plies:
     action, root = run_mcts(game, network)
@@ -218,7 +155,7 @@ def run_mcts(game: Game, network: Network):
 def select_action(game: Game, root: Node):
   visit_counts = [(child.visit_count, action) for action, child in root.children.iteritems()]
   if len(game.history) < Network.num_explorative_moves:
-    _, action = softmax_sample(visit_counts)
+    _, action =  NotImplemented # softmax_sample(visit_counts)
   else:
     _, action = max(visit_counts)
   return action
