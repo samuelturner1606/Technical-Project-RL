@@ -1,64 +1,42 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers, Model, Input, initializers, optimizers, utils, losses, models, callbacks, metrics
-from logic3 import Game, State, Random
+from tensorflow.keras import Input, layers, Model, optimizers, losses, callbacks
 
-def basic_block(x, filters=256, kernel_size=3, strides=1):
-    'Convolutional layer then BatchNormalization and ReLU activation.'
-    x = layers.Conv2D(
-        filters=filters,
-        kernel_size=kernel_size,
-        strides=strides,
-        padding="valid",
-        data_format='channels_first',
-        use_bias=False,
-        kernel_initializer=initializers.TruncatedNormal(mean=0.0, stddev=0.01, seed=None)
-    )(x)
-    x = layers.BatchNormalization(axis=1, momentum=0.999, epsilon=0.001, center=True, scale=False)(x)
-    x = layers.ReLU()(x)
-    return x
-
-def bottleneck_block(x1, filters=128):
+def bottleneck_block(x):
     'Creates residual block with bottleneck and skip connection.'
-    x = basic_block(x1, filters=filters, kernel_size=1, strides=1)
-    x = basic_block(x, filters=filters, kernel_size=3, strides=1)
-    x = basic_block(x, filters=filters, kernel_size=3, strides=1)
-    x = layers.Conv2D(
-        filters=2*filters,
-        kernel_size=1,
-        strides=1,
-        padding="valid",
-        data_format='channels_first',
-        use_bias=False,
-        kernel_initializer=initializers.TruncatedNormal(mean=0.0, stddev=0.01, seed=None)
-    )(x)
-    x = layers.BatchNormalization(axis=1, momentum=0.999, epsilon=0.001, center=True, scale=False)(x)
-    x = layers.Add()([x1,x]) # skip connection
-    x = layers.ReLU()(x)
-    return x
+    m = layers.Conv2D(64, (1,1), padding='same', data_format='channels_first', use_bias=False, kernel_initializer='truncated_normal')(x)
+    m = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(m)
+    m = layers.ReLU(6)(m)
+    m = layers.DepthwiseConv2D((3,3), padding='same', data_format='channels_first', use_bias=False, depthwise_initializer='truncated_normal')(m)
+    m = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(m)
+    m = layers.ReLU(6)(m)
+    m = layers.DepthwiseConv2D((3,3), padding='same', data_format='channels_first', use_bias=False, depthwise_initializer='truncated_normal')(m)
+    m = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(m)
+    m = layers.ReLU(6)(m)
+    m = layers.Conv2D(16, (1,1), padding='same', data_format='channels_first', use_bias=False, kernel_initializer='truncated_normal')(m)
+    m = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(m)
+    m = layers.Add()([m, x]) # skip connection
+    return layers.ReLU(6)(m)
 
-# Create combined actor-critic network.
+# Create combined actor-critic network
 states = Input(shape=(2,8,8), dtype='float32', name='states')
-x = basic_block(input, kernel_size=3)
+x = layers.Conv2D(16, (3,3), padding='same', data_format='channels_first', use_bias=False, kernel_initializer='truncated_normal')(states)
+x = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(x)
+x = layers.ReLU(6)(x)
 x = bottleneck_block(x)
 x = bottleneck_block(x)
-#x = bottleneck_block(x)
-#x = bottleneck_block(x)
-#x = bottleneck_block(x)
-#x = bottleneck_block(x)
 x = layers.Flatten(data_format='channels_first')(x)
-actor = layers.Dense(4*8*2*4*4*4*4, activation=None, name='actor')(x)
+actor_logits = layers.Dense(4*8*2*4*4*4*4, activation=None, name='actor_logits')(x)
 critic = layers.Dense(1, activation='sigmoid', name='critic')(x)
     
 class Network:
     'Class containing all methods and variables that interact with the neural network.'
     ### Self-Play
     num_explorative_moves = 30
-    max_plies = 150
     num_simulations = 400
     
     # Root prior exploration noise.
-    root_dirichlet_alpha = 0.3  # for chess, 0.03 for Go and 0.15 for shogi.
+    root_dirichlet_alpha = 0.1
     root_exploration_fraction = 0.25
 
     # UCB formula
@@ -96,32 +74,34 @@ class Network:
         update_freq='batch') ]
     
     # model is defined outside of __init__() so that all Network instances share the same model
-    model = Model(inputs=[states], outputs=[actor, critic])
+    model = Model(inputs=[states], outputs=[actor_logits, critic])
     model.compile(
         optimizer = optimizers.SGD(learning_rate=learning_rate_schedule, momentum=momentum),
         loss = {
-            'actor': losses.SparseCategoricalCrossentropy(from_logits=True),
+            'actor_logits': losses.SparseCategoricalCrossentropy(from_logits=True),
             'critic': losses.MeanSquaredError()
         }, 
-        metrics={'actor': 'accuracy', 'critic': 'accuracy'},
-        loss_weights = {'actor': 1, 'critic': 1}
+        metrics={'actor_logits': 'accuracy', 'critic': 'accuracy'},
+        loss_weights = {'actor_logits': 1, 'critic': 1}
     )
     model.summary()
 
-    def inference(self, board: np.ndarray):
+    @staticmethod
+    def inference(board: np.ndarray):
         '@return (masked_policy, value)'
-        policy, value = self.model(board, training=False)
+        policy, value = Network.model(board, training=False)
         NotImplemented
         masked_policy = policy[0]
         return masked_policy, value[0]
     
-    def train(self, states: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):
+    @staticmethod
+    def train(states: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):
         '''trains the neural network with examples obtained from self-play.
         Model weights are saved at the end of every epoch, if it's the best seen so far.
         '''
         Network.model.fit(
             x = {'states': states},
-            y = {'actor': actor_targets, 'critic': critic_targets},
+            y = {'actor_logits': actor_targets, 'critic': critic_targets},
             batch_size=Network.batch_size,
             callbacks=[Network.model_callbacks],
             workers=1)
