@@ -185,7 +185,7 @@ class State:
             landing = self._shift(a_end, offset)
             a_board[1] ^= (collision | landing)
         assert new_boards.shape == (2,8,8)
-        return new_boards[::-1,::-1,::-1] # changes order of player planes and rotates planes 180 degrees
+        return new_boards[::-1,::-1,::-1] # orientates boards to next player by flipping player planes and rotating them 180 degrees
 
     def render(self) -> None:
         'Prints the current game boards.'
@@ -305,7 +305,15 @@ class Game:
         '''Plays a Shōbu game then resets itself.
         @return state_history: list of game board states
         @return action_history: list of game actions
-        @return reward_history: list of length plies where elements are all the terminal reward'''
+        @return reward_history: list of length plies where elements are the terminal reward from perspective of the player at that time
+        #### Example `reward_history`:
+        - If player `1` won in `5` plies then `reward_history` = [1, 0, 1, 0, 1]
+        - Whereas, if player `2` won in `4` plies then `reward_history` = [0, 1, 0, 1]
+
+        This is done so that the neural network critic can identify the value of states based on the future reward. 
+        The critic value is from the perspective of the current player's state so that 0 means it thinks the opponent will win. 
+        This is `NOT` always the same as saying player 2 will win as it depends on who's turn it is.
+        '''
         while True:
             legal_actions = self.state.legal_actions()
             if self.render:
@@ -317,7 +325,7 @@ class Game:
                 print(f'plies: {self.plies}, reward: {reward}')
                 s = self.state_history
                 a = self.action_history
-                r = [reward]*self.plies
+                r = (self.plies//2)*[reward, 1-reward] + (self.plies%2)*[reward]
                 assert len(s) == len(a)
                 self.reset()
                 return s, a, r
