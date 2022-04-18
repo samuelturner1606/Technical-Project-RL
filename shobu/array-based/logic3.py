@@ -80,11 +80,11 @@ class State:
 
     def __init__(self, boards: np.ndarray = None) -> None:
         if boards is None: # creates default starting state
-            self.boards: np.ndarray = np.zeros(shape=(2,8,8), dtype=np.float32)
-            self.boards[0, 0:-1:4, :] = 1 # player's stones
-            self.boards[1, -1:0:-4, :] = 1 # opponent's stones
+            self.boards: np.ndarray = np.zeros(shape=(2,8,8), dtype=np.uint8)
+            self.boards[0, -1:0:-4, :] = 1 # player's stones
+            self.boards[1, 0:-1:4, :] = 1 # opponent's stones
         else:
-            self.boards: np.ndarray = np.asarray(boards, dtype=np.float32)
+            self.boards: np.ndarray = np.asarray(boards, dtype=np.uint8)
             assert self.boards.shape == (2,8,8), 'Board not the right shape.'
     
     def __eq__ (self, other):
@@ -139,14 +139,14 @@ class State:
     def legal_actions(self) -> np.ndarray:
         '''Find all legal actions on all boards, in all directions and distances. Can be used to mask illegal actions from the policy head of the neural network.
         @return output: ndarray indexed by (combo, direction, distance, aggro_y, aggro_x, passive_y, passive_x)'''
-        output = np.zeros(shape=(4,8,2,4,4,4,4), dtype=np.float32)
+        output = np.zeros(shape=(4,8,2,4,4,4,4), dtype=np.uint8)
         for d, offset in enumerate(State.OFFSETS):
             for p in State.P2A:
                 passives1, passives2 = self._legal_passives(self.boards[State.QUADRANT[p]], offset)
                 if np.any(passives1):
                     for a in State.P2A[p]:
                         aggros1, aggros2 = self._legal_aggros(self.boards[State.QUADRANT[a]], offset)
-                        temp_aggros = np.zeros(shape=(4,8,2,4,4), dtype=np.float32)
+                        temp_aggros = np.zeros(shape=(4,8,2,4,4), dtype=np.uint8)
                         if np.any(aggros1):
                             output[a, d, 0, ...] = passives1
                             temp_aggros[a, d, 0, ...] = aggros1
@@ -157,7 +157,7 @@ class State:
         assert output.shape == (4,8,2,4,4,4,4), 'Shape of legal actions is wrong'
         return output
     
-    def play_action(self, action: np.ndarray) -> np.ndarray:
+    def apply(self, action: np.ndarray) -> np.ndarray:
         '''Returns a copy of the boards with (an assumed) legal passive and aggressive move having been applied.
         @return new_boards: 2x8x8 ndarray'''
         assert action.shape == (7,), 'Action not the right shape.'
@@ -181,7 +181,7 @@ class State:
         collision = path & a_board[1]
         print(f'combo: {p, a}, direction: {State.DIRECTIONS[direction]}, distance: {distance+1}, p: {p_x, p_y}, a: {a_x, a_y}')
         if np.any(collision): 
-            print('collision')
+            print('collision with opponent stone')
             landing = self._shift(a_end, offset)
             a_board[1] ^= (collision | landing)
         assert new_boards.shape == (2,8,8)
@@ -192,18 +192,21 @@ class State:
         m = (self.boards[0] + 2*self.boards[1]).astype(str)
         m = np.insert(m, 4, 8*['|'], 1)
         m = np.insert(m, 4, 9*['-'], 0)
-        txt: str = '\n ' + np.array_str(m) + colorama.Style.RESET_ALL
+        txt: str = '\n ' + np.array_str(m)
         txt = txt.replace('\'','')
         txt = txt.replace('[','')
         txt = txt.replace(']','')
         txt = txt.replace('0', colorama.Fore.WHITE+'o')
         txt = txt.replace('1', colorama.Fore.BLUE+'o')
         txt = txt.replace('2', colorama.Fore.RED+'o')
+        txt = txt.replace('|',colorama.Fore.GREEN+'|')
+        txt = txt.replace('-',colorama.Fore.GREEN+'-')
+        txt += colorama.Style.RESET_ALL
         out = txt.splitlines(True)
         return print(*out)
 
 class Human:
-    def policy(self, legal_actions: np.ndarray, _) -> np.ndarray:
+    def policy(self, legal_actions: np.ndarray) -> np.ndarray:
         '''Select a passive and aggressive action from all legal actions.'''
         def get_choice(choices: list[str], prompt: str = '') -> str:
             'General user input handling function.'
@@ -246,7 +249,7 @@ class Human:
         return action[0]
 
 class Random:
-    def policy(self, legal_actions: np.ndarray, _) -> np.ndarray:
+    def policy(self, legal_actions: np.ndarray) -> np.ndarray:
         '''Randomly select an action from all legal actions.'''
         return choice(np.argwhere(legal_actions)) 
 
@@ -261,7 +264,6 @@ class Game:
 
     def reset(self) -> None:
         self.state = State() # default start state
-        self.done = False
         self.state_history = []
         self.action_history = []
         return
@@ -269,6 +271,10 @@ class Game:
     @property
     def current_player(self):
         return len(self.action_history) % 2
+    
+    @property
+    def plies(self):
+        return len(self.action_history)
 
     def terminal(self, legal_actions: np.ndarray):
         '''Losing conditions:
@@ -278,42 +284,50 @@ class Game:
         Drawing conditions:
         1) The game has lasted 150 plies
 
-        @return reward: 
-        - player1 win = `1`
+        @return reward: reward value for player 1
+        - win = `1`
         - draw = `0.5`
-        - player1 loss = `0`
+        - loss = `0`
         - non-terminal = `None`
         ### Note
         Checking for terminal conditions is done just before a player makes their move in case they have no legal moves.'''
         if self.plies >= 150:
-            self.done = True
-            return 0.5
+            return 0.5 
         elif (not np.any(legal_actions)):
-            self.done = True
-            return 1 - self.state.current_player
+            return self.current_player
         for i in 0,1,2,3:
-            board = self.state.boards[State.QUADRANT[i]][self.state.current_player]
+            board = self.state.boards[State.QUADRANT[i]][0]
             if not np.any(board): 
-                self.done = True
-                return 1 - self.state.current_player # opponent won on previous turn
+                return self.current_player # opponent won on previous turn
         return None  # game not over
 
     def play(self) -> int:
-        'Plays a Shōbu game, then resets itself and returns the reward.'
+        '''Plays a Shōbu game then resets itself.
+        @return state_history: list of game board states
+        @return action_history: list of game actions
+        @return reward_history: list of length plies where elements are all the terminal reward'''
         while True:
             legal_actions = self.state.legal_actions()
             if self.render:
                 self.state.render()
                 n = np.argwhere(legal_actions)
-                print(f'Number of actions: {len(n)}')
+                print(f'Number of legal actions: {len(n)}')
             reward = self.terminal(legal_actions)
-            if self.done:
+            if reward is not None:
                 print(f'plies: {self.plies}, reward: {reward}')
+                s = self.state_history
+                a = self.action_history
+                r = [reward]*self.plies
+                assert len(s) == len(a)
                 self.reset()
-                return reward
-            c = self.state.current_player
-            action = self.players[c].policy(legal_actions, c)
-            new_boards = self.state.play_action(action)
+                return s, a, r
+            action = self.players[self.current_player].policy(legal_actions)
+            self.state_history.append(self.state.boards.astype(np.float32))
+            self.action_history.append(action)
+            new_boards = self.state.apply(action)
             self.state = State(new_boards)
-            self.plies += 1
 
+if __name__ == '__main__':
+    game = Game(Random(), Human(), True)
+    s, a, r = game.play()
+    pass
