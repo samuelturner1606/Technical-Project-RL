@@ -84,15 +84,15 @@ class Network:
         metrics={'actor_logits': 'accuracy', 'critic': 'accuracy'},
         loss_weights = {'actor_logits': 1, 'critic': 1}
     )
-    model.summary()
 
     @staticmethod
-    def inference(board: np.ndarray):
+    def inference(board: np.ndarray, legal_actions: np.ndarray):
         '@return (masked_policy, value)'
-        policy, value = Network.model(board, training=False)
-        NotImplemented
-        masked_policy = policy[0]
-        return masked_policy, value[0]
+        assert legal_actions.ndim == 1, 'legal actions not flat'
+        policy, value = Network.model(board[None,...], training=False)
+        masked_policy = policy[0].numpy()
+        masked_policy[legal_actions==0] = -np.inf
+        return masked_policy, value.numpy()[0,0]
     
     @staticmethod
     def train(states: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):

@@ -206,7 +206,7 @@ class State:
         return print(*out)
 
 class Human:
-    def policy(self, legal_actions: np.ndarray) -> tuple[int]:
+    def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
         '''Select a passive and aggressive action from all legal actions.'''
         def get_choice(choices: list[str], prompt: str = '') -> str:
             'General user input handling function.'
@@ -249,24 +249,22 @@ class Human:
         return tuple(action[0])
 
 class Random:
-    def policy(self, legal_actions: np.ndarray) -> tuple[int]:
+    def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
         '''Randomly select an action from all legal actions.'''
         return tuple(choice(np.argwhere(legal_actions))) 
 
 class Game:
-    def __init__(self, player1: object, player2: object, render: bool = False) -> None:
+    def __init__(self, player1: object = None, player2: object = None, render: bool = False, action_history  =None) -> None:
         self.players = [player1, player2]
         self.render = render
         if render:
             colorama.init()
             print(colorama.ansi.clear_screen())
-        self.reset()
-
-    def reset(self) -> None:
         self.state = State() # default start state
         self.state_history = []
-        self.action_history = []
-        return
+        self.action_history = action_history or []
+        self.child_visits = []
+        self.num_actions = 4*8*2*4*4*4*4
     
     @property
     def current_player(self):
@@ -327,15 +325,17 @@ class Game:
                 a = self.action_history
                 r = (self.plies//2)*[reward, 1-reward] + (self.plies%2)*[reward]
                 assert len(s) == len(a)
-                self.reset()
                 return s, a, r
-            action = self.players[self.current_player].policy(legal_actions)
+            action = self.players[self.current_player].policy(legal_actions, self)
             self.state_history.append(self.state.boards.astype(np.float32))
             self.action_history.append(action)
             new_boards = self.state.apply(action)
             self.state = State(new_boards)
-
-if __name__ == '__main__':
-    game = Game(Random(), Random(), True)
-    s, a, r = game.play()
-    pass
+        
+    def store_search_statistics(self, root):
+        sum_visits = sum(child.visit_count for child in root.children.itervalues())
+        self.child_visits.append([root.children[a].visit_count / sum_visits if a in root.children else 0 for a in range(self.num_actions)])
+'''
+game = Game(Random(), Random(), True)
+s, a, r = game.play()
+'''
