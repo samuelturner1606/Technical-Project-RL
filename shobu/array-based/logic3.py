@@ -157,10 +157,10 @@ class State:
         assert output.shape == (4,8,2,4,4,4,4), 'Shape of legal actions is wrong'
         return output
     
-    def apply(self, action: np.ndarray) -> np.ndarray:
+    def apply(self, action: tuple[int]) -> np.ndarray:
         '''Returns a copy of the boards with (an assumed) legal passive and aggressive move having been applied.
         @return new_boards: 2x8x8 ndarray'''
-        assert action.shape == (7,), 'Action not the right shape.'
+        assert len(action) == 7, 'Action not the right shape.'
         a, direction, distance, a_y, a_x, p_y, p_x = action
         new_boards = self.boards.copy()
         offset = State.OFFSETS[direction]
@@ -206,7 +206,7 @@ class State:
         return print(*out)
 
 class Human:
-    def policy(self, legal_actions: np.ndarray) -> np.ndarray:
+    def policy(self, legal_actions: np.ndarray) -> tuple[int]:
         '''Select a passive and aggressive action from all legal actions.'''
         def get_choice(choices: list[str], prompt: str = '') -> str:
             'General user input handling function.'
@@ -246,12 +246,12 @@ class Human:
         a = get_choice(unique_aggros, 'Aggro (x y)')
         aggro = np.array([[a[3],a[1]]], dtype=action.dtype)
         action = action[np.all(aggros == aggro, axis=1)]
-        return action[0]
+        return tuple(action[0])
 
 class Random:
-    def policy(self, legal_actions: np.ndarray) -> np.ndarray:
+    def policy(self, legal_actions: np.ndarray) -> tuple[int]:
         '''Randomly select an action from all legal actions.'''
-        return choice(np.argwhere(legal_actions)) 
+        return tuple(choice(np.argwhere(legal_actions))) 
 
 class Game:
     def __init__(self, player1: object, player2: object, render: bool = False) -> None:
@@ -336,6 +336,6 @@ class Game:
             self.state = State(new_boards)
 
 if __name__ == '__main__':
-    game = Game(Random(), Human(), True)
+    game = Game(Random(), Random(), True)
     s, a, r = game.play()
     pass
