@@ -3,6 +3,7 @@ Board game CLI implementation of Shōbu using bitwise operators.
 '''
 from random import choice
 import numpy as np
+import colorama
 
 '''Constants used for testing:'''
 MAX_ACTIONS = [
@@ -65,13 +66,10 @@ NO_MOVES = [
 
 class State:
     '''4 Shōbu 4x4 boards.
-    @param boards: 2x8x8 np.ndarray or None
-    @param current_player: 1 for player1, 0 for player2.'''
+    @param boards: 2x8x8 np.ndarray'''
     # The following are constants shared between all State instances used to speed up calculations
-    P2A = ( # mapping of passive to aggro board (indices) combinations
-        { 2: (0, 3), 3: (1, 2)}, # index 0 = player 1
-        { 0: (1, 2), 1: (0, 3)} ) # index 1 = player 2
-    A2P = tuple( {aggro:passive for passive in player for aggro in player[passive]} for player in P2A ) # reverse mapping of `P2A`
+    P2A =  { 2: (0, 3), 3: (1, 2) } # maps passive to aggro boards of current player when orientated to them
+    A2P = { 0:2, 3:2, 1:3, 2:3 } # reverse mapping of `P2A`
     DIRECTIONS = ('N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW')
     OFFSETS = ((-1,0), (-1,1), (0,1), (1,1), (1,0), (1,-1), (0,-1), (-1,-1)) # indices match `DIRECTIONS`
     QUADRANT = ( # Used to slice an nx8x8 ndarray into nx4x4, via the board indices 0 to 3.
@@ -83,19 +81,20 @@ class State:
     def __init__(self, boards: np.ndarray = None) -> None:
         if boards is None: # creates default starting state
             self.boards: np.ndarray = np.zeros(shape=(2,8,8), dtype=np.float32)
-            self.boards[1, -1:0:-4, :] = 1 # player 1 pieces
-            self.boards[0, 0:-1:4, :] = 1 # player 2 pieces
+            self.boards[0, 0:-1:4, :] = 1 # player's stones
+            self.boards[1, -1:0:-4, :] = 1 # opponent's stones
         else:
             self.boards: np.ndarray = np.asarray(boards, dtype=np.float32)
             assert self.boards.shape == (2,8,8), 'Board not the right shape.'
     
     def __eq__ (self, other):
         if isinstance(other, State):
-            return (self.current_player == other.current_player) and np.all(self.boards == other.boards)
+            return np.all(self.boards == other.boards)
         else:
             return NotImplementedError 
 
-    def _shift(self, array: np.ndarray, offset: tuple[int]) -> np.ndarray:
+    @staticmethod
+    def _shift(array: np.ndarray, offset: tuple[int]) -> np.ndarray:
         'Returns a copy of an `array` shifted (without rollover) by `offset`.'
         assert len(offset) == array.ndim, 'Number of dimensions do not match.'
         new_array = np.empty_like(array)
@@ -110,12 +109,11 @@ class State:
         '''Find the ending squares of all legal passive moves, for all distances, in a direction, on a given board.
         @param p_board: 2x4x4 ndarray representing the board to play a passive move on.
         @param offset: directional offset
-        @return passive1: 2x4x4 ndarray with a legal passive move, of distance 1, applied to all pieces of the current player
-        @return passive2: 2x4x4 ndarray with a legal passive move, of distance 2, applied to all pieces of the current player'''
+        @return passive1: 2x4x4 ndarray with a legal passive move, of distance 1, applied to all stones of the current player
+        @return passive2: 2x4x4 ndarray with a legal passive move, of distance 2, applied to all stones of the current player'''
         assert p_board.shape == (2,4,4), 'Passive board not the right shape.'
-        player = p_board[self.current_player]
-        opponent = p_board[1 - self.current_player]
-        empty = 1 - (player | opponent)
+        player = p_board[0]
+        empty = 1 - (player | p_board[1])
         passive1 = self._shift(player, offset) & empty
         passive2 = self._shift(passive1, offset) & empty
         return passive1, passive2
@@ -124,12 +122,12 @@ class State:
         '''Find the ending squares of all legal aggressive moves, for all distances, in a direction, on a given board.
         @param a_board: A 2x4x4 ndarray representing the board to play a aggressive move on.
         @param offset: Directional offset
-        @return aggro1: A 2x4x4 ndarray with a legal aggressive move, of distance 1, applied to all pieces of the current player
-        @return aggro2: A 2x4x4 ndarray with a legal aggressive move, of distance 2, applied to all pieces of the current player'''
+        @return aggro1: A 2x4x4 ndarray with a legal aggressive move, of distance 1, applied to all stones of the current player
+        @return aggro2: A 2x4x4 ndarray with a legal aggressive move, of distance 2, applied to all stones of the current player'''
         assert a_board.shape == (2,4,4), 'Aggressive board not the right shape.'
-        p2 = a_board[self.current_player]
+        p2 = a_board[0]
         p3 = self._shift(p2, offset)
-        x2 = p2 | a_board[1 - self.current_player]
+        x2 = p2 | a_board[1]
         x1 = self._shift(x2, tuple(map((-1).__mul__, offset)))
         x3 = self._shift(x2, offset)
         mask1 = 1 - ( (x1 & x2) | p2 ) 
@@ -139,14 +137,14 @@ class State:
         return aggro1, aggro2
 
     def legal_actions(self) -> np.ndarray:
-        '''Find all legal actions on all boards, in all directions and distances. Can be used to directly mask the policy head of the neural network for legal actions.
+        '''Find all legal actions on all boards, in all directions and distances. Can be used to mask illegal actions from the policy head of the neural network.
         @return output: ndarray indexed by (combo, direction, distance, aggro_y, aggro_x, passive_y, passive_x)'''
         output = np.zeros(shape=(4,8,2,4,4,4,4), dtype=np.float32)
         for d, offset in enumerate(State.OFFSETS):
-            for p in State.P2A[self.current_player]:
+            for p in State.P2A:
                 passives1, passives2 = self._legal_passives(self.boards[State.QUADRANT[p]], offset)
                 if np.any(passives1):
-                    for a in State.P2A[self.current_player][p]:
+                    for a in State.P2A[p]:
                         aggros1, aggros2 = self._legal_aggros(self.boards[State.QUADRANT[a]], offset)
                         temp_aggros = np.zeros(shape=(4,8,2,4,4), dtype=np.float32)
                         if np.any(aggros1):
@@ -172,32 +170,35 @@ class State:
         a_end = p_end.copy()
         p_end[p_y, p_x] = 1
         a_end[a_y, a_x] = 1
-        p = State.A2P[self.current_player][a]
+        p = State.A2P[a]
         p_board = new_boards[State.QUADRANT[p]]
         a_board = new_boards[State.QUADRANT[a]]
         # update current player's stones
-        p_board[self.current_player] ^= (self._shift(p_end, neg_offset) | p_end)
-        a_board[self.current_player] ^= (self._shift(a_end, neg_offset) | a_end)
+        p_board[0] ^= (self._shift(p_end, neg_offset) | p_end)
+        a_board[0] ^= (self._shift(a_end, neg_offset) | a_end)
         # detect collision with opponent's stones
         path = a_end | self._shift(a_end, tuple(map((-1).__mul__, offset)) )
-        collision = path & a_board[1 - self.current_player]
-        print(f'player: {self.current_player}, combo: {p, a}, direction: {State.DIRECTIONS[direction]}, distance: {distance+1}, p: {p_x, p_y}, a: {a_x, a_y}')
+        collision = path & a_board[1]
+        print(f'combo: {p, a}, direction: {State.DIRECTIONS[direction]}, distance: {distance+1}, p: {p_x, p_y}, a: {a_x, a_y}')
         if np.any(collision): 
             print('collision')
             landing = self._shift(a_end, offset)
-            a_board[1 - self.current_player] ^= (collision | landing)
+            a_board[1] ^= (collision | landing)
         assert new_boards.shape == (2,8,8)
-        return new_boards
+        return new_boards[::-1,::-1,::-1] # changes order of player planes and rotates planes 180 degrees
 
     def render(self) -> None:
         'Prints the current game boards.'
-        m = (2*self.boards[0] + self.boards[1]).astype(str)
+        m = (self.boards[0] + 2*self.boards[1]).astype(str)
         m = np.insert(m, 4, 8*['|'], 1)
         m = np.insert(m, 4, 9*['-'], 0)
-        txt: str = '\n ' + np.array_str(m)
+        txt: str = '\n ' + np.array_str(m) + colorama.Style.RESET_ALL
         txt = txt.replace('\'','')
         txt = txt.replace('[','')
         txt = txt.replace(']','')
+        txt = txt.replace('0', colorama.Fore.WHITE+'o')
+        txt = txt.replace('1', colorama.Fore.BLUE+'o')
+        txt = txt.replace('2', colorama.Fore.RED+'o')
         out = txt.splitlines(True)
         return print(*out)
 
@@ -251,17 +252,23 @@ class Random:
 
 class Game:
     def __init__(self, player1: object, player2: object, render: bool = False) -> None:
-        self.players = [player2, player1] # index 1 for player 1, matching State.current_player
+        self.players = [player1, player2]
         self.render = render
+        if render:
+            colorama.init()
+            print(colorama.ansi.clear_screen())
         self.reset()
 
     def reset(self) -> None:
         self.state = State() # default start state
-        self.plies = 0 # used for max game length rule
         self.done = False
         self.state_history = []
         self.action_history = []
         return
+    
+    @property
+    def current_player(self):
+        return len(self.action_history) % 2
 
     def terminal(self, legal_actions: np.ndarray):
         '''Losing conditions:
@@ -307,6 +314,6 @@ class Game:
             c = self.state.current_player
             action = self.players[c].policy(legal_actions, c)
             new_boards = self.state.play_action(action)
-            self.state = State(new_boards, current_player=1-c)
+            self.state = State(new_boards)
             self.plies += 1
 
