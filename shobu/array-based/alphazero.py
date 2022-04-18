@@ -3,45 +3,10 @@
 import math
 import numpy
 import tensorflow as tf
-from tensorflow.keras import layers, Model, Input, initializers, optimizers, utils, losses, models, callbacks, metrics
+from network import Network
 
 ##########################
 ####### Helpers ##########
-
-class Network:
-  ### Self-Play
-  num_explorative_moves = 30
-  max_plies = 150
-  num_simulations = 400
-
-  # Root prior exploration noise.
-  root_dirichlet_alpha = 0.3  # for chess, 0.03 for Go and 0.15 for shogi.
-  root_exploration_fraction = 0.25
-
-  # UCB formula
-  pb_c_base = 19652
-  pb_c_init = 1.25
-
-  ### Training
-  training_steps = int(10e3)
-  checkpoint_interval = int(1e3)
-  batch_size = 50
-  batch_save_freq = 20*batch_size
-  weight_decay = 1e-4
-  momentum = 0.9
-
-  learning_rate_schedule = optimizers.schedules.ExponentialDecay(
-      initial_learning_rate=2e-1,
-      decay_steps=batch_save_freq//2,
-      decay_rate=0.99,
-      staircase=False)
-
-  def inference(self, image):
-    return (-1, {})  # Value, Policy
-
-  def get_weights(self):
-    # Returns the weights of this network.
-    return []
 
 class Node:
   def __init__(self, prior: float):
@@ -59,9 +24,7 @@ class Node:
       return 0
     return self.value_sum / self.visit_count
 
-
 class Game:
-
   def __init__(self, history=None):
     self.history = history or []
     self.child_visits = []
@@ -87,18 +50,14 @@ class Game:
 
   def store_search_statistics(self, root):
     sum_visits = sum(child.visit_count for child in root.children.itervalues())
-    self.child_visits.append([
-        root.children[a].visit_count / sum_visits if a in root.children else 0
-        for a in range(self.num_actions)
-    ])
+    self.child_visits.append([root.children[a].visit_count / sum_visits if a in root.children else 0 for a in range(self.num_actions)])
 
   def make_image(self, state_index: int):
     # Game specific feature planes.
     return []
 
   def make_target(self, state_index: int):
-    return (self.terminal_value(state_index % 2),
-            self.child_visits[state_index])
+    return (self.terminal_value(state_index % 2), self.child_visits[state_index])
 
   def to_play(self):
     return len(self.history) % 2
@@ -216,12 +175,10 @@ def add_exploration_noise(node: Node):
 ####### Part 2: Training #########
 
 
-def train_network(storage: SharedStorage, replay_buffer: ReplayBuffer):
+def train_network():
   network = Network()
   optimizer = tf.train.MomentumOptimizer(Network.learning_rate_schedule, Network.momentum)
   for i in range(Network.training_steps):
-    if i % Network.checkpoint_interval == 0:
-      storage.save_network(i, network)
     batch = replay_buffer.sample_batch()
     update_weights(optimizer, network, batch, Network.weight_decay)
   storage.save_network(Network.training_steps, network)
