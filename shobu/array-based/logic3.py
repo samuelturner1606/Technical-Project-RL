@@ -206,6 +206,7 @@ class State:
         return print(*out)
 
 class Game:
+    'Class representing one Shōbu episode, that handles turn taking, terminal conditions and game attributes.'
     # num_actions = 4*8*2*4*4*4*4
     def __init__(self, player1: object, player2: object, render: bool = False) -> None:
         self.players = [player1, player2]
@@ -253,7 +254,7 @@ class Game:
     def play(self) -> int:
         '''Plays a Shōbu game then resets itself.
         @return state_history: list of game board states
-        @return policy_targets: produced from MCTS
+        @return policy_targets: list of ndarrays produced from MCTS
         @return critic_targets: list of length plies where elements are the terminal reward from perspective of the player at that time
         #### Example `critic_target`:
         - If player `1` won in `5` plies then `critic_target` = [1, 0, 1, 0, 1]
@@ -275,7 +276,7 @@ class Game:
                 print(f'plies: {p}, reward: {reward}')
                 r = (p//2)*[reward, 1-reward] + (p%2)*[reward]
                 assert len(self.state_history) == len(self.policy_targets), 'Batch size of state_history and policy_targets are different.'
-                return self.state_history, self.policy_targets, np.array(r, dtype=np.float32)
+                return self.state_history, self.policy_targets, r
             action = self.players[self.current_player].policy(legal_actions, self)
             self.state_history.append(self.state.boards.astype(np.float32))
             self.state.boards = self.state.apply(action)

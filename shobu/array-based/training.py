@@ -113,6 +113,7 @@ class MCTS:
         return
 
 if __name__ == '__main__':
+    Network.load_model()
     for _ in range(Network.training_steps):
         game = Game(MCTS(), MCTS())
         state_history, policy_targets, critic_targets = game.play()

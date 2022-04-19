@@ -1,6 +1,14 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import Input, layers, Model, optimizers, losses, callbacks
+from tensorflow.keras import Input, layers, Model, optimizers, losses, callbacks, metrics, utils, models
+import os
+import datetime
+
+device_name = tf.test.gpu_device_name()
+if not device_name:
+  raise SystemError('GPU device not found')
+print('Found GPU at: {}'.format(device_name))
+
 
 def bottleneck_block(x):
     'Creates residual block with bottleneck and skip connection.'
@@ -45,9 +53,10 @@ class Network:
     ### Training
     training_steps = int(10e3)
     batch_size = 50
-    checkpoint_interval = 20*batch_size
+    checkpoint_interval = 10*batch_size
     weight_decay = 1e-4
     momentum = 0.9
+    epochs = 1
 
     learning_rate_schedule = optimizers.schedules.ExponentialDecay(
         initial_learning_rate=2e-1,
@@ -55,33 +64,44 @@ class Network:
         decay_rate=0.99,
         staircase=False )
     
+    cwd = os.getcwd()
+    checkpoint_dir = './checkpoints'
+    log_dir = os.path.join(cwd, 'logs')
+    if not os.path.exists(checkpoint_dir):
+        os.makedirs(checkpoint_dir)
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
     model_callbacks = [
         callbacks.EarlyStopping(
-        monitor='accuracy',
-        verbose=1,
-        patience=checkpoint_interval//2),
-        callbacks.ModelCheckpoint(
-        filepath='./weights.{epoch:02d}-{accuracy:.2f}.hdf5',
-        monitor='accuracy',
-        verbose=1, # 0 for silent callback display
-        save_best_only=True,
-        save_weights_only=True,
-        save_freq=checkpoint_interval), # saves model after N batches (if best)
+            monitor='accuracy',
+            verbose=1,
+            patience=500),
+        callbacks.ModelCheckpoint(  
+            filepath=checkpoint_dir +'/weights.{epoch:02d}-{accuracy:.2f}.hdf5',
+            monitor='accuracy',
+            verbose=1, # 0 for silent callback display
+            save_best_only=True,
+            save_weights_only=True,
+            save_freq=checkpoint_interval), # saves model after N batches (if best)
         callbacks.TensorBoard(
-        log_dir='./logs', 
-        write_graph=True,
-        update_freq='batch') ]
+            log_dir=log_dir, 
+            write_graph=True,
+            update_freq='batch') 
+    ]
     
     # model is defined outside of __init__() so that all Network instances share the same model
     model = Model(inputs=[states], outputs=[actor_logits, critic])
+    #utils.plot_model(model, "model_diagram.png", show_shapes=True)
     model.compile(
         optimizer = optimizers.SGD(learning_rate=learning_rate_schedule, momentum=momentum),
         loss = {
             'actor_logits': losses.CategoricalCrossentropy(from_logits=True),
             'critic': losses.MeanSquaredError()
         }, 
-        metrics={'actor_logits': 'accuracy', 'critic': 'accuracy'},
-        loss_weights = {'actor_logits': 1, 'critic': 1}
+        metrics={
+            'actor_logits': metrics.CategoricalAccuracy(dtype=tf.float32), 
+            'critic': metrics.Accuracy(dtype=tf.float32)},
+        #loss_weights = {'actor_logits': 1, 'critic': 1}
     )
 
     @staticmethod
@@ -96,13 +116,23 @@ class Network:
         return e/np.sum(e), value.numpy()[0,0]
     
     @staticmethod
-    def train(states: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):
-        '''trains the neural network with examples obtained from self-play.
+    def train(state_history: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):
+        '''Trains the neural network from a game.
         Model weights are saved at the end of every epoch, if it's the best seen so far.
         '''
         Network.model.fit(
-            x = {'states': states},
+            x = {'states': state_history},
             y = {'actor_logits': actor_targets, 'critic': critic_targets},
             batch_size=Network.batch_size,
             callbacks=[Network.model_callbacks],
-            workers=1)
+            epochs=Network.epochs)
+    
+    @staticmethod
+    def load_model() -> None:
+        '''Restore model to latest checkpoint if one.'''
+        checkpoints = [Network.checkpoint_dir + "/" + name for name in os.listdir(Network.checkpoint_dir)]
+        if checkpoints:
+            latest_checkpoint = max(checkpoints, key=os.path.getctime)
+            print("Restoring from", latest_checkpoint)
+            Network.model = models.load_model(latest_checkpoint, compile=True)
+
