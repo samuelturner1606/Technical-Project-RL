@@ -284,10 +284,6 @@ class Game:
             new_boards = self.state.apply(action)
             self.state = State(new_boards)
         
-    def store_search_statistics(self, root):
-        sum_visits = sum(child.visit_count for child in root.children.itervalues())
-        self.child_visits.append([root.children[a].visit_count / sum_visits if a in root.children else 0 for a in range(self.num_actions)])
-
 class Human:
     def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
         '''Select a passive and aggressive action from all legal actions.'''

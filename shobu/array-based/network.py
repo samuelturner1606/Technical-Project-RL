@@ -33,7 +33,7 @@ class Network:
     'Class containing all methods and variables that interact with the neural network.'
     ### Self-Play
     num_explorative_moves = 30
-    num_simulations = 400
+    num_simulations = 10 # 400
     
     # Root prior exploration noise.
     root_dirichlet_alpha = 0.1
@@ -86,7 +86,7 @@ class Network:
     )
 
     @staticmethod
-    def inference(board: np.ndarray, legal_actions: np.ndarray) -> tuple[np.ndarray, int]:
+    def inference(board: np.ndarray, legal_actions: np.ndarray) -> tuple[np.ndarray, float]:
         '''@return softmax_policy: probability of actions, illegal actions have probability of 0
         @return value: float between 0 and 1'''
         assert legal_actions.ndim == 1, 'legal actions not flat'
