@@ -86,13 +86,15 @@ class Network:
     )
 
     @staticmethod
-    def inference(board: np.ndarray, legal_actions: np.ndarray):
-        '@return (masked_policy, value)'
+    def inference(board: np.ndarray, legal_actions: np.ndarray) -> tuple[np.ndarray, int]:
+        '''@return softmax_policy: probability of actions, illegal actions have probability of 0
+        @return value: float between 0 and 1'''
         assert legal_actions.ndim == 1, 'legal actions not flat'
-        policy, value = Network.model(board[None,...], training=False)
-        masked_policy = policy[0].numpy()
+        policy_logits, value = Network.model(board[None,...], training=False)
+        masked_policy = policy_logits[0].numpy()
         masked_policy[legal_actions==0] = -np.inf
-        return masked_policy, value.numpy()[0,0]
+        e = np.exp(masked_policy)
+        return e/np.sum(e), value.numpy()[0,0]
     
     @staticmethod
     def train(states: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):

@@ -205,56 +205,8 @@ class State:
         out = txt.splitlines(True)
         return print(*out)
 
-class Human:
-    def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
-        '''Select a passive and aggressive action from all legal actions.'''
-        def get_choice(choices: list[str], prompt: str = '') -> str:
-            'General user input handling function.'
-            if len(choices) < 2:
-                choice = choices[0]
-                print(f'{prompt} of {choice} was the only choice left.')
-            else:
-                choice = ''
-                while choice not in choices:
-                    choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
-            return choice
-        action = np.argwhere(legal_actions)
-        # filter combos
-        combos = action[:, 0]
-        unique_combos = [str(i) for i in np.unique(combos)]
-        combo = int(get_choice(unique_combos, 'aggro board'))
-        action = action[combos == combo]
-        # filter directions
-        directions = action[:, 1]
-        unique_directions = [State.DIRECTIONS[i] for i in np.unique(directions)]
-        direction = State.DIRECTIONS.index(get_choice(unique_directions, 'direction'))
-        action = action[directions == direction]
-        # filter distances
-        distances = action[:, 2]
-        unique_distances = [str(i+1) for i in np.unique(distances)]
-        distance = unique_distances.index(get_choice(unique_distances, 'distance'))
-        action = action[distances == distance]
-        # filter passives
-        passives = action[:, 5:7]
-        unique_passives = [ f'({x} {y})' for y, x in np.unique(passives, axis=0)]
-        p = get_choice(unique_passives, 'Passive (x y)')
-        passive = np.array([[p[3],p[1]]], dtype=action.dtype)
-        action = action[np.all(passives == passive, axis=1)]
-        # filter aggros
-        aggros = action[:, 3:5]
-        unique_aggros = [ f'({x} {y})' for y, x in np.unique(aggros, axis=0)]
-        a = get_choice(unique_aggros, 'Aggro (x y)')
-        aggro = np.array([[a[3],a[1]]], dtype=action.dtype)
-        action = action[np.all(aggros == aggro, axis=1)]
-        return tuple(action[0])
-
-class Random:
-    def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
-        '''Randomly select an action from all legal actions.'''
-        return tuple(choice(np.argwhere(legal_actions))) 
-
 class Game:
-    def __init__(self, player1: object = None, player2: object = None, render: bool = False, action_history  =None) -> None:
+    def __init__(self, player1: object = None, player2: object = None, render: bool = False, action_history = None) -> None:
         self.players = [player1, player2]
         self.render = render
         if render:
@@ -335,6 +287,55 @@ class Game:
     def store_search_statistics(self, root):
         sum_visits = sum(child.visit_count for child in root.children.itervalues())
         self.child_visits.append([root.children[a].visit_count / sum_visits if a in root.children else 0 for a in range(self.num_actions)])
+
+class Human:
+    def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
+        '''Select a passive and aggressive action from all legal actions.'''
+        def get_choice(choices: list[str], prompt: str = '') -> str:
+            'General user input handling function.'
+            if len(choices) < 2:
+                choice = choices[0]
+                print(f'{prompt} of {choice} was the only choice left.')
+            else:
+                choice = ''
+                while choice not in choices:
+                    choice = input(f"Choose one {prompt} from [{', '.join(choices)}]:\n")
+            return choice
+        action = np.argwhere(legal_actions)
+        # filter combos
+        combos = action[:, 0]
+        unique_combos = [str(i) for i in np.unique(combos)]
+        combo = int(get_choice(unique_combos, 'aggro board'))
+        action = action[combos == combo]
+        # filter directions
+        directions = action[:, 1]
+        unique_directions = [State.DIRECTIONS[i] for i in np.unique(directions)]
+        direction = State.DIRECTIONS.index(get_choice(unique_directions, 'direction'))
+        action = action[directions == direction]
+        # filter distances
+        distances = action[:, 2]
+        unique_distances = [str(i+1) for i in np.unique(distances)]
+        distance = unique_distances.index(get_choice(unique_distances, 'distance'))
+        action = action[distances == distance]
+        # filter passives
+        passives = action[:, 5:7]
+        unique_passives = [ f'({x} {y})' for y, x in np.unique(passives, axis=0)]
+        p = get_choice(unique_passives, 'Passive (x y)')
+        passive = np.array([[p[3],p[1]]], dtype=action.dtype)
+        action = action[np.all(passives == passive, axis=1)]
+        # filter aggros
+        aggros = action[:, 3:5]
+        unique_aggros = [ f'({x} {y})' for y, x in np.unique(aggros, axis=0)]
+        a = get_choice(unique_aggros, 'Aggro (x y)')
+        aggro = np.array([[a[3],a[1]]], dtype=action.dtype)
+        action = action[np.all(aggros == aggro, axis=1)]
+        return tuple(action[0])
+
+class Random:
+    def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
+        '''Randomly select an action from all legal actions.'''
+        return tuple(choice(np.argwhere(legal_actions))) 
+
 '''
 game = Game(Random(), Random(), True)
 s, a, r = game.play()
