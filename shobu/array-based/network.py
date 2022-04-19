@@ -78,7 +78,7 @@ class Network:
     model.compile(
         optimizer = optimizers.SGD(learning_rate=learning_rate_schedule, momentum=momentum),
         loss = {
-            'actor_logits': losses.SparseCategoricalCrossentropy(from_logits=True),
+            'actor_logits': losses.CategoricalCrossentropy(from_logits=True),
             'critic': losses.MeanSquaredError()
         }, 
         metrics={'actor_logits': 'accuracy', 'critic': 'accuracy'},
