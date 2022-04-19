@@ -10,6 +10,7 @@ from network import Network
 from logic3 import Game, State, Random, Human
 
 class Node(State):
+    'Extends the State class with statistics used in MCTS.'
     def __init__(self, current_player: bool, boards: np.ndarray = None, parent: object = None, prior: float = 0) -> None:
         if boards is None:
             self.boards = boards
@@ -23,8 +24,9 @@ class Node(State):
         self.current_player = current_player
 
 class MCTS:
+    'Player that performs a Monte Carlo Tree search with neural network priors to select moves each turn.'
     def policy(self, root_legal_actions: np.ndarray, game: Game) -> Node:
-        '''Run N simulations of the Core Monte Carlo Tree Search algorithm and return a good action.
+        '''Run N simulations of the Core MCTS algorithm and return a good action.
         - build a game tree starting from the `root`
         - traverse down according to the UCB formula until a leaf node is found
         - backpropagate statistics upto the root
@@ -111,6 +113,7 @@ class MCTS:
         return
 
 if __name__ == '__main__':
-  game = Game(MCTS(), MCTS(), True)
-  state_history, policy_targets, critic_targets = game.play()
-  pass
+    for _ in range(Network.training_steps):
+        game = Game(MCTS(), MCTS())
+        state_history, policy_targets, critic_targets = game.play()
+    pass

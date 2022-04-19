@@ -32,8 +32,7 @@ critic = layers.Dense(1, activation='sigmoid', name='critic')(x)
 class Network:
     'Class containing all methods and variables that interact with the neural network.'
     ### Self-Play
-    num_explorative_moves = 30
-    num_simulations = 10 # 400
+    num_simulations = 300
     
     # Root prior exploration noise.
     root_dirichlet_alpha = 0.1
