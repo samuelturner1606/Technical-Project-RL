@@ -179,9 +179,9 @@ class State:
         # detect collision with opponent's stones
         path = a_end | self._shift(a_end, tuple(map((-1).__mul__, offset)) )
         collision = path & a_board[1]
-        print(f'combo: {p, a}, direction: {State.DIRECTIONS[direction]}, distance: {distance+1}, p: {p_x, p_y}, a: {a_x, a_y}')
+        #print(f'combo: {p, a}, direction: {State.DIRECTIONS[direction]}, distance: {distance+1}, p: {p_x, p_y}, a: {a_x, a_y}')
         if np.any(collision): 
-            print('collision with opponent stone')
+            #print('collision with opponent stone')
             landing = self._shift(a_end, offset)
             a_board[1] ^= (collision | landing)
         assert new_boards.shape == (2,8,8)
@@ -206,7 +206,8 @@ class State:
         return print(*out)
 
 class Game:
-    def __init__(self, player1: object = None, player2: object = None, render: bool = False, action_history = None) -> None:
+    # num_actions = 4*8*2*4*4*4*4
+    def __init__(self, player1: object = None, player2: object = None, render: bool = False) -> None:
         self.players = [player1, player2]
         self.render = render
         if render:
@@ -214,17 +215,15 @@ class Game:
             print(colorama.ansi.clear_screen())
         self.state = State() # default start state
         self.state_history = []
-        self.action_history = action_history or []
-        self.child_visits = []
-        self.num_actions = 4*8*2*4*4*4*4
+        self.policy_targets = []
     
     @property
     def current_player(self):
-        return len(self.action_history) % 2
+        return len(self.state_history) % 2
     
     @property
     def plies(self):
-        return len(self.action_history)
+        return len(self.state_history)
 
     def terminal(self, legal_actions: np.ndarray):
         '''Losing conditions:
@@ -254,11 +253,11 @@ class Game:
     def play(self) -> int:
         '''Plays a Shōbu game then resets itself.
         @return state_history: list of game board states
-        @return action_history: list of game actions
-        @return reward_history: list of length plies where elements are the terminal reward from perspective of the player at that time
-        #### Example `reward_history`:
-        - If player `1` won in `5` plies then `reward_history` = [1, 0, 1, 0, 1]
-        - Whereas, if player `2` won in `4` plies then `reward_history` = [0, 1, 0, 1]
+        @return policy_targets: produced from MCTS
+        @return critic_targets: list of length plies where elements are the terminal reward from perspective of the player at that time
+        #### Example `critic_target`:
+        - If player `1` won in `5` plies then `critic_target` = [1, 0, 1, 0, 1]
+        - Whereas, if player `2` won in `4` plies then `critic_target` = [0, 1, 0, 1]
 
         This is done so that the neural network critic can identify the value of states based on the future reward. 
         The critic value is from the perspective of the current player's state so that 0 means it thinks the opponent will win. 
@@ -272,26 +271,24 @@ class Game:
                 print(f'Number of legal actions: {len(n)}')
             reward = self.terminal(legal_actions)
             if reward is not None:
-                print(f'plies: {self.plies}, reward: {reward}')
-                s = self.state_history
-                a = self.action_history
-                r = (self.plies//2)*[reward, 1-reward] + (self.plies%2)*[reward]
-                assert len(s) == len(a)
-                return s, a, r
+                p = self.plies
+                print(f'plies: {p}, reward: {reward}')
+                r = (p//2)*[reward, 1-reward] + (p%2)*[reward]
+                assert len(self.state_history) == len(self.policy_targets), 'Batch size of state_history and policy_targets are different.'
+                return self.state_history, self.policy_targets, r
             action = self.players[self.current_player].policy(legal_actions, self)
             self.state_history.append(self.state.boards.astype(np.float32))
-            self.action_history.append(action)
             new_boards = self.state.apply(action)
             self.state = State(new_boards)
         
 class Human:
-    def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
+    def policy(self, legal_actions: np.ndarray, game: Game) -> tuple[int]:
         '''Select a passive and aggressive action from all legal actions.'''
         def get_choice(choices: list[str], prompt: str = '') -> str:
             'General user input handling function.'
             if len(choices) < 2:
                 choice = choices[0]
-                print(f'{prompt} of {choice} was the only choice left.')
+                print(f'{prompt.capitalize()} of {choice} was the only choice left.')
             else:
                 choice = ''
                 while choice not in choices:
@@ -325,14 +322,20 @@ class Human:
         a = get_choice(unique_aggros, 'Aggro (x y)')
         aggro = np.array([[a[3],a[1]]], dtype=action.dtype)
         action = action[np.all(aggros == aggro, axis=1)]
-        return tuple(action[0])
+        policy_target = legal_actions.flatten().astype(np.float32) # all legal actions are given equal weight
+        human_action = action[0]
+        flat_index = np.ravel_multi_index(human_action, legal_actions.shape)
+        policy_target[flat_index] = 200 # skews the policy to play like the human
+        game.policy_targets.append(policy_target)
+        return tuple(human_action)
 
 class Random:
-    def policy(self, legal_actions: np.ndarray, _) -> tuple[int]:
+    def policy(self, legal_actions: np.ndarray, game: Game) -> tuple[int]:
         '''Randomly select an action from all legal actions.'''
+        game.policy_targets.append(legal_actions.flatten().astype(np.float32)) # all legal actions are given equal weight
         return tuple(choice(np.argwhere(legal_actions))) 
 
-'''
-game = Game(Random(), Random(), True)
-s, a, r = game.play()
-'''
+if __name__ == '__main__':
+  game = Game(Random(), Random(), True)
+  state_history, policy_targets, critic_targets = game.play()
+  pass
