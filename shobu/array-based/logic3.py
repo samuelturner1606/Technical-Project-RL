@@ -276,7 +276,7 @@ class Game:
                 print(f'plies: {p}, reward: {reward}')
                 r = (p//2)*[reward, 1-reward] + (p%2)*[reward]
                 assert len(self.state_history) == len(self.policy_targets), 'Batch size of state_history and policy_targets are different.'
-                return self.state_history, self.policy_targets, r
+                return np.asarray(self.state_history), np.asarray(self.policy_targets), np.asarray(r, dtype=np.float)
             action = self.players[self.current_player].policy(legal_actions, self)
             self.state_history.append(self.state.boards.astype(np.float32))
             self.state.boards = self.state.apply(action)

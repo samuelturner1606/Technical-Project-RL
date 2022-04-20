@@ -111,10 +111,13 @@ class Network:
         masked_policy = policy_logits[0].numpy()
         masked_policy[legal_actions==0] = -np.inf
         e = np.exp(masked_policy)
-        return e/np.sum(e), value.numpy()[0,0]
+        s = np.sum(e)
+        if s==0: # avoids division by zero
+            s=1
+        return e/s, value.numpy()[0,0]
     
     @staticmethod
-    def train(state_history: list[np.ndarray], actor_targets: list[np.ndarray], critic_targets: list[int]):
+    def train(state_history: np.ndarray, actor_targets: np.ndarray, critic_targets: np.ndarray):
         '''Trains the neural network from a game.
         Model weights are saved at the end of every epoch, if it's the best seen so far.
         '''
