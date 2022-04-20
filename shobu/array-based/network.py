@@ -2,13 +2,11 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import Input, layers, Model, optimizers, losses, callbacks, metrics, utils, models
 import os
-import datetime
 
 device_name = tf.test.gpu_device_name()
 if not device_name:
   raise SystemError('GPU device not found')
 print('Found GPU at: {}'.format(device_name))
-
 
 def bottleneck_block(x):
     'Creates residual block with bottleneck and skip connection.'
@@ -40,7 +38,7 @@ critic = layers.Dense(1, activation='sigmoid', name='critic')(x)
 class Network:
     'Class containing all methods and variables that interact with the neural network.'
     ### Self-Play
-    num_simulations = 300
+    num_simulations = 150
     
     # Root prior exploration noise.
     root_dirichlet_alpha = 0.1
@@ -66,7 +64,7 @@ class Network:
     
     cwd = os.getcwd()
     checkpoint_dir = './checkpoints'
-    log_dir = os.path.join(cwd, 'logs')
+    log_dir = './logs'
     if not os.path.exists(checkpoint_dir):
         os.makedirs(checkpoint_dir)
     if not os.path.exists(log_dir):
@@ -116,7 +114,7 @@ class Network:
         return e/np.sum(e), value.numpy()[0,0]
     
     @staticmethod
-    def train(state_history: list[np.ndarray], actor_targets: np.ndarray, critic_targets: np.ndarray):
+    def train(state_history: list[np.ndarray], actor_targets: list[np.ndarray], critic_targets: list[int]):
         '''Trains the neural network from a game.
         Model weights are saved at the end of every epoch, if it's the best seen so far.
         '''
@@ -135,4 +133,5 @@ class Network:
             latest_checkpoint = max(checkpoints, key=os.path.getctime)
             print("Restoring from", latest_checkpoint)
             Network.model = models.load_model(latest_checkpoint, compile=True)
-
+        else:
+            print('Compiling new model')

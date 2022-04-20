@@ -114,7 +114,8 @@ class MCTS:
 
 if __name__ == '__main__':
     Network.load_model()
-    for _ in range(Network.training_steps):
-        game = Game(MCTS(), MCTS())
+    for i in range(Network.training_steps):
+        game = Game(MCTS(), MCTS(), True)
         state_history, policy_targets, critic_targets = game.play()
+        Network.train(state_history, policy_targets, critic_targets)
     pass
