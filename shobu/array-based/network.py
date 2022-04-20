@@ -72,18 +72,18 @@ class Network:
     model_callbacks = [
         callbacks.EarlyStopping(
             monitor='accuracy',
-            verbose=1,
+            verbose=0,
             patience=500),
         callbacks.ModelCheckpoint(  
             filepath=checkpoint_dir +'/weights.{epoch:02d}-{accuracy:.2f}.hdf5',
             monitor='accuracy',
-            verbose=1, # 0 for silent callback display
+            verbose=0,
             save_best_only=True,
-            save_weights_only=True,
+            save_weights_only=False,
             save_freq=checkpoint_interval), # saves model after N batches (if best)
         callbacks.TensorBoard(
             log_dir=log_dir, 
-            write_graph=True,
+            write_graph=False,
             update_freq='batch') 
     ]
     
@@ -110,11 +110,10 @@ class Network:
         policy_logits, value = Network.model(board[None,...], training=False)
         masked_policy = policy_logits[0].numpy()
         masked_policy[legal_actions==0] = -np.inf
-        e = np.exp(masked_policy)
-        s = np.sum(e)
-        if s==0: # avoids division by zero
-            s=1
-        return e/s, value.numpy()[0,0]
+        def softmax(x):
+            f = np.exp(x - np.max(x))  # shift values
+            return f / f.sum(axis=0)
+        return softmax(masked_policy), value.numpy()[0,0]
     
     @staticmethod
     def train(state_history: np.ndarray, actor_targets: np.ndarray, critic_targets: np.ndarray):
