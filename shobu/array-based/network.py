@@ -51,7 +51,6 @@ class Network:
     ### Training
     training_steps = int(5e3)
     batch_size = 50
-    checkpoint_batches = 600
     weight_decay = 1e-4
     momentum = 0.9
     exporative_moves = 20
@@ -79,10 +78,10 @@ class Network:
             verbose=1,
             save_best_only=True,
             save_weights_only=True,
-            save_freq=checkpoint_batches), # saves model after N batches (if best)
+            save_freq=600), # saves model after N batches (if best)
         callbacks.TensorBoard(
             log_dir=log_dir,
-            update_freq='epoch') 
+            update_freq=100)  
     ]
     model = Model(inputs=[states], outputs=[actor_logits, critic])
     #utils.plot_model(model, "model_diagram.png", show_shapes=True)
