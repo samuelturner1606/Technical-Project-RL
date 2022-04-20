@@ -12,23 +12,23 @@ def bottleneck_block(x):
     'Creates residual block with bottleneck and skip connection.'
     m = layers.Conv2D(64, (1,1), padding='same', data_format='channels_first', use_bias=False, kernel_initializer='truncated_normal')(x)
     m = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(m)
-    m = layers.ReLU(6)(m)
+    m = layers.ReLU()(m)
     m = layers.DepthwiseConv2D((3,3), padding='same', data_format='channels_first', use_bias=False, depthwise_initializer='truncated_normal')(m)
     m = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(m)
-    m = layers.ReLU(6)(m)
+    m = layers.ReLU()(m)
     m = layers.DepthwiseConv2D((3,3), padding='same', data_format='channels_first', use_bias=False, depthwise_initializer='truncated_normal')(m)
     m = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(m)
-    m = layers.ReLU(6)(m)
+    m = layers.ReLU()(m)
     m = layers.Conv2D(16, (1,1), padding='same', data_format='channels_first', use_bias=False, kernel_initializer='truncated_normal')(m)
     m = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(m)
     m = layers.Add()([m, x]) # skip connection
-    return layers.ReLU(6)(m)
+    return layers.ReLU()(m)
 
 # Create combined actor-critic network
 states = Input(shape=(2,8,8), dtype='float32', name='states')
 x = layers.Conv2D(16, (3,3), padding='same', data_format='channels_first', use_bias=False, kernel_initializer='truncated_normal')(states)
 x = layers.BatchNormalization(axis=1, momentum=0.999, scale=False)(x)
-x = layers.ReLU(6)(x)
+x = layers.ReLU()(x)
 x = bottleneck_block(x)
 x = bottleneck_block(x)
 x = layers.Flatten(data_format='channels_first')(x)
@@ -57,7 +57,7 @@ class Network:
     epochs = 1
 
     learning_rate_schedule = optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=2e-1,
+        initial_learning_rate=2e-3,
         decay_steps=checkpoint_interval//2,
         decay_rate=0.99,
         staircase=False )
