@@ -49,21 +49,19 @@ class Network:
     pb_c_init = 1.25
 
     ### Training
-    training_steps = int(10e3)
+    training_steps = int(5e3)
     batch_size = 50
-    checkpoint_interval = 5*batch_size
+    checkpoint_batches = 600
     weight_decay = 1e-4
     momentum = 0.9
-    epochs = 1
     exporative_moves = 20
 
     learning_rate_schedule = optimizers.schedules.ExponentialDecay(
         initial_learning_rate=2e-1,
-        decay_steps=checkpoint_interval,
+        decay_steps=500,
         decay_rate=0.99,
         staircase=False )
     
-    cwd = os.getcwd()
     checkpoint_dir = './checkpoints'
     log_dir = './logs'
     if not os.path.exists(checkpoint_dir):
@@ -72,24 +70,28 @@ class Network:
         os.makedirs(log_dir)
     model_callbacks = [
         callbacks.EarlyStopping(
-            monitor='accuracy',
+            monitor='actor_logits_categorical_accuracy',
             verbose=0,
             patience=500),
         callbacks.ModelCheckpoint(  
-            filepath=checkpoint_dir +'/weights.{epoch:02d}-{accuracy:.2f}.hdf5',
-            monitor='accuracy',
-            verbose=0,
+            filepath=checkpoint_dir +'/weights-{epoch:02d}.hdf5',
+            monitor='actor_logits_categorical_accuracy',
+            verbose=1,
             save_best_only=True,
-            save_weights_only=False,
-            save_freq=checkpoint_interval), # saves model after N batches (if best)
+            save_weights_only=True,
+            save_freq=checkpoint_batches), # saves model after N batches (if best)
         callbacks.TensorBoard(
             log_dir=log_dir,
             update_freq='epoch') 
     ]
-    
-    # model is defined outside of __init__() so that all Network instances share the same model
     model = Model(inputs=[states], outputs=[actor_logits, critic])
     #utils.plot_model(model, "model_diagram.png", show_shapes=True)
+    checkpoints = [f'./checkpoints/{name}' for name in os.listdir(checkpoint_dir)]
+    if checkpoints:
+        latest_checkpoint = max(checkpoints, key=os.path.getctime)
+        print("Restoring from", latest_checkpoint)
+        model.load_weights(latest_checkpoint)
+ 
     model.compile(
         optimizer = optimizers.SGD(learning_rate=learning_rate_schedule, momentum=momentum),
         loss = {
@@ -124,16 +126,4 @@ class Network:
             x = {'states': state_history},
             y = {'actor_logits': actor_targets, 'critic': critic_targets},
             batch_size=Network.batch_size,
-            callbacks=[Network.model_callbacks],
-            epochs=Network.epochs)
-    
-    @staticmethod
-    def load_model() -> None:
-        '''Restore model to latest checkpoint if one.'''
-        checkpoints = [Network.checkpoint_dir + "/" + name for name in os.listdir(Network.checkpoint_dir)]
-        if checkpoints:
-            latest_checkpoint = max(checkpoints, key=os.path.getctime)
-            print("Restoring from", latest_checkpoint)
-            Network.model = models.load_model(latest_checkpoint, compile=True)
-        else:
-            print('Compiling new model')
+            callbacks=[Network.model_callbacks])

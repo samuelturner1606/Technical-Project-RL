@@ -4,7 +4,6 @@ AlphaZero cycles between: self-play data generation and network training.
 Network checkpoints are handled by keras callback functions.
 '''
 from __future__ import division
-
 import math
 import numpy as np
 from network import Network
@@ -33,7 +32,7 @@ class MCTS:
         - traverse down according to the UCB formula until a leaf node is found
         - backpropagate statistics upto the root
         '''
-        if game.plies < Network.exporative_moves: # forces 
+        if game.plies < Network.exporative_moves: # forces exploration
             return Random.policy(root_legal_actions, game)
         root = Node(current_player=game.current_player, boards=game.state.boards)
         self.evaluate(root, root_legal_actions)
@@ -117,8 +116,7 @@ class MCTS:
         return
 
 if __name__ == '__main__':
-    Network.load_model()
-    for i in range(Network.training_steps):
+    for _ in range(Network.training_steps):
         game = Game(MCTS(), MCTS(), True)
         state_history, policy_targets, critic_targets = game.play()
         Network.train(state_history, policy_targets, critic_targets)
