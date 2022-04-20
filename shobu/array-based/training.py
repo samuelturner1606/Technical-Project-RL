@@ -116,8 +116,9 @@ class MCTS:
         return
 
 if __name__ == '__main__':
-    for _ in range(Network.training_steps):
+    for i in range(Network.training_games):
         game = Game(MCTS(), MCTS(), True)
         state_history, policy_targets, critic_targets = game.play()
         Network.train(state_history, policy_targets, critic_targets)
-    pass
+        if (i % Network.checkpoint_freq) == 0:
+            Network.model.save_weights(f'{Network.checkpoint_dir}/weights-{i}.hdf5', overwrite=True)

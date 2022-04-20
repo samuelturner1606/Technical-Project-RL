@@ -49,11 +49,12 @@ class Network:
     pb_c_init = 1.25
 
     ### Training
-    training_steps = int(5e3)
+    training_games = int(5e3)
     batch_size = 50
     weight_decay = 1e-4
     momentum = 0.9
     exporative_moves = 20
+    checkpoint_freq = 200
 
     learning_rate_schedule = optimizers.schedules.ExponentialDecay(
         initial_learning_rate=2e-1,
@@ -69,19 +70,19 @@ class Network:
         os.makedirs(log_dir)
     model_callbacks = [
         callbacks.EarlyStopping(
-            monitor='actor_logits_categorical_accuracy',
+            monitor='loss',
             verbose=0,
             patience=500),
-        callbacks.ModelCheckpoint(  
-            filepath=checkpoint_dir +'/weights-{epoch:02d}.hdf5',
-            monitor='actor_logits_categorical_accuracy',
-            verbose=1,
+        callbacks.ModelCheckpoint(
+            filepath=f'{checkpoint_dir}/weights-best.hdf5',
+            monitor='loss',
+            verbose=0,
             save_best_only=True,
             save_weights_only=True,
-            save_freq=600), # saves model after N batches (if best)
+            save_freq='epoch'),
         callbacks.TensorBoard(
             log_dir=log_dir,
-            update_freq=100)  
+            update_freq=50)  
     ]
     model = Model(inputs=[states], outputs=[actor_logits, critic])
     #utils.plot_model(model, "model_diagram.png", show_shapes=True)
