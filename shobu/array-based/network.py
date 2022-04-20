@@ -38,7 +38,7 @@ critic = layers.Dense(1, activation='sigmoid', name='critic')(x)
 class Network:
     'Class containing all methods and variables that interact with the neural network.'
     ### Self-Play
-    num_simulations = 150
+    num_simulations = 50
     
     # Root prior exploration noise.
     root_dirichlet_alpha = 0.1
@@ -51,14 +51,15 @@ class Network:
     ### Training
     training_steps = int(10e3)
     batch_size = 50
-    checkpoint_interval = 10*batch_size
+    checkpoint_interval = 5*batch_size
     weight_decay = 1e-4
     momentum = 0.9
     epochs = 1
+    exporative_moves = 20
 
     learning_rate_schedule = optimizers.schedules.ExponentialDecay(
-        initial_learning_rate=2e-3,
-        decay_steps=checkpoint_interval//2,
+        initial_learning_rate=2e-1,
+        decay_steps=checkpoint_interval,
         decay_rate=0.99,
         staircase=False )
     
@@ -82,9 +83,8 @@ class Network:
             save_weights_only=False,
             save_freq=checkpoint_interval), # saves model after N batches (if best)
         callbacks.TensorBoard(
-            log_dir=log_dir, 
-            write_graph=False,
-            update_freq='batch') 
+            log_dir=log_dir,
+            update_freq='epoch') 
     ]
     
     # model is defined outside of __init__() so that all Network instances share the same model

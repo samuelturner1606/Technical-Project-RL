@@ -1,13 +1,15 @@
 '''
 AlphaZero algorithm applied to Shōbu. 
 AlphaZero cycles between: self-play data generation and network training. 
-network checkpoints are handled by keras callback functions.
+Network checkpoints are handled by keras callback functions.
 '''
+from __future__ import division
 
 import math
 import numpy as np
 from network import Network
 from logic3 import Game, State, Random, Human
+from random import choice
 
 class Node(State):
     'Extends the State class with statistics used in MCTS.'
@@ -31,6 +33,8 @@ class MCTS:
         - traverse down according to the UCB formula until a leaf node is found
         - backpropagate statistics upto the root
         '''
+        if game.plies < Network.exporative_moves: # forces 
+            return Random.policy(root_legal_actions, game)
         root = Node(current_player=game.current_player, boards=game.state.boards)
         self.evaluate(root, root_legal_actions)
         self.add_exploration_noise(root)

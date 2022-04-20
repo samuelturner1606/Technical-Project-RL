@@ -276,14 +276,15 @@ class Game:
                 print(f'plies: {p}, reward: {reward}')
                 r = (p//2)*[reward, 1-reward] + (p%2)*[reward]
                 assert len(self.state_history) == len(self.policy_targets), 'Batch size of state_history and policy_targets are different.'
-                return np.asarray(self.state_history), np.asarray(self.policy_targets), np.asarray(r, dtype=np.float)
+                return np.asarray(self.state_history), np.asarray(self.policy_targets), np.asarray(r, dtype=np.float)[:,None]
             action = self.players[self.current_player].policy(legal_actions, self)
             self.state_history.append(self.state.boards.astype(np.float32))
             self.state.boards = self.state.apply(action)
         
 class Human:
     'Human player that selects moves using the prompts printed to the terminal.'
-    def policy(self, legal_actions: np.ndarray, game: Game) -> tuple[int]:
+    @staticmethod
+    def policy(legal_actions: np.ndarray, game: Game) -> tuple[int]:
         '''Select a passive and aggressive action from all legal actions.'''
         def get_choice(choices: list[str], prompt: str = '') -> str:
             'General user input handling function.'
@@ -332,7 +333,8 @@ class Human:
 
 class Random:
     'Player that selects random legal moves.'
-    def policy(self, legal_actions: np.ndarray, game: Game) -> tuple[int]:
+    @staticmethod
+    def policy(legal_actions: np.ndarray, game: Game) -> tuple[int]:
         '''Randomly select an action from all legal actions.'''
         game.policy_targets.append(legal_actions.flatten().astype(np.float32)) # all legal actions are given equal weight
         return tuple(choice(np.argwhere(legal_actions))) 
