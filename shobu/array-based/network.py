@@ -49,12 +49,11 @@ class Network:
     pb_c_init = 1.25
 
     ### Training
-    training_games = int(5e3)
-    batch_size = 50
+    training_games = int(15e3)
     weight_decay = 1e-4
     momentum = 0.9
     exporative_moves = 20
-    checkpoint_freq = 200
+    checkpoint_freq = 20
 
     learning_rate_schedule = optimizers.schedules.ExponentialDecay(
         initial_learning_rate=2e-1,
@@ -82,7 +81,7 @@ class Network:
             save_freq='epoch'),
         callbacks.TensorBoard(
             log_dir=log_dir,
-            update_freq=50)  
+            update_freq=100)  
     ]
     model = Model(inputs=[states], outputs=[actor_logits, critic])
     #utils.plot_model(model, "model_diagram.png", show_shapes=True)
@@ -125,5 +124,5 @@ class Network:
         Network.model.fit(
             x = {'states': state_history},
             y = {'actor_logits': actor_targets, 'critic': critic_targets},
-            batch_size=Network.batch_size,
+            batch_size=critic_targets.shape[0],
             callbacks=[Network.model_callbacks])
