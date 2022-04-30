@@ -2,13 +2,12 @@
 University project to use Reinforcement Learning in games such as Tic-Tac-Toe, Connect-4 and Shōbu. 
 
 ## Running
+It is recommended to use the python -m switch terminal command when running files that import from parent directories, otherwise ModuleNotFoundError may be encounted (I was unable to implement other solutions.)
 
-I recommended using the python -m switch terminal command when running files that import from parent directories, shown below, otherwise ModuleNotFoundError with be encounted. (I experimented with modifying the python sys.path to do this automatically for users but to no success.)
-
-Example command line usage:
+Example command line usage assuming the repo is your current working directory:
 
 ```
-python -m Shobu.logic"
+python -m shobu.small.logic"
 ```
 
 Alternatively to accomplish this, a VSCode launch.json file can be used to run and debug configurations of python modules.
@@ -23,7 +22,7 @@ Example VSCode launch.json:
             "name": "Python: Module",
             "type": "python",
             "request": "launch",
-            "module": "Shobu.logic",
+            "module": "shobu.small.logic",
             "justMyCode": true
         }
     ]
